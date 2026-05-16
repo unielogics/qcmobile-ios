@@ -1,19 +1,11 @@
-// Mobile new-loan-file screen — Pipeline tab's create action.
-//
-// Distinct from /agent/client/new, which creates a CONTACT. This screen
-// creates a LOAN FILE for an existing client — the AI nurtures the loan
-// (not the person). Submits to POST /intake which finds-or-creates the
-// client by email and originates a Loan with property + ask + AI cadence.
+// Mobile new funding-file wizard (broker only — the /agent/* tree is
+// broker-gated). 4 steps mirroring the web SmartIntakeModal so the
+// broker configures the same thing on either platform:
+//   Borrower → Asset → Numbers → AI & Messaging
+// Submits to POST /intake (find-or-create client + originate Loan).
 
-import { useMemo, useState } from "react";
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { useMemo, useState, type ReactNode } from "react";
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, type Href } from "expo-router";
 import { useTheme } from "@/design-system/ThemeProvider";
@@ -21,56 +13,101 @@ import { Card } from "@/design-system/primitives";
 import { Icon } from "@/design-system/Icon";
 import { KeyboardAware } from "@/components/KeyboardAware";
 import { useClients, useCreateLoanFile } from "@/hooks/useApi";
-import { LoanTypeOptions, PropertyTypeOptions } from "@/lib/enums.generated";
+import {
+  EntityTypeOptions,
+  ExperienceTierOptions,
+  LoanTypeOptions,
+  PropertyTypeOptions,
+} from "@/lib/enums.generated";
 import type { Client } from "@/lib/types";
 
-type Cadence = "aggressive" | "standard" | "slow";
+type T = ReturnType<typeof useTheme>["t"];
+type Side = "buyer" | "seller";
+type Purpose = "purchase" | "refinance";
+type Unit = "days" | "hours";
+
+const STEPS = ["Borrower", "Asset", "Numbers", "AI & Messaging"] as const;
+
+const SOURCE_OPTS = [
+  { value: "direct_borrower", label: "Direct borrower" },
+  { value: "agent_referral", label: "Agent referral" },
+  { value: "existing_client", label: "Existing client" },
+  { value: "website", label: "Website" },
+  { value: "phone_call", label: "Phone call" },
+  { value: "other", label: "Other" },
+] as const;
+
+interface CustomDoc {
+  name: string;
+  offset: string; // numeric string, in `docUnit`
+}
 
 interface Draft {
   client: Client | null;
   search: string;
+  name: string;
+  email: string;
+  phone: string;
+  entity_type: string;
+  entity_name: string;
+  experience: string;
+  sourceAttribution: string;
+  side: Side;
+  purpose: Purpose;
+  loan_type: string;
   address: string;
   city: string;
   state: string;
   property_type: string;
-  loan_type: string;
   amount: string;
   ltv: string;
-  cadence: Cadence;
+  // AI & Messaging
+  startValue: string;
+  startUnit: Unit;
+  docUnit: Unit;
+  customDocs: CustomDoc[];
 }
 
 const INITIAL: Draft = {
   client: null,
   search: "",
+  name: "",
+  email: "",
+  phone: "",
+  entity_type: "individual",
+  entity_name: "",
+  experience: "1_2_flips",
+  sourceAttribution: "direct_borrower",
+  side: "buyer",
+  purpose: "purchase",
+  loan_type: "dscr",
   address: "",
   city: "",
   state: "",
   property_type: "single_family",
-  loan_type: "dscr",
   amount: "",
   ltv: "70",
-  cadence: "standard",
+  startValue: "0",
+  startUnit: "days",
+  docUnit: "days",
+  customDocs: [],
 };
-
-const CADENCE_CHOICES: { value: Cadence; label: string; floor: number }[] = [
-  { value: "aggressive", label: "Aggressive", floor: 7.5 },
-  { value: "standard", label: "Standard", floor: 8.0 },
-  { value: "slow", label: "Slow", floor: 8.5 },
-];
 
 export default function AgentNewLoanFileRoute() {
   const { t } = useTheme();
   const router = useRouter();
   const create = useCreateLoanFile();
   const { data: clients = [] } = useClients("mine");
-  const [draft, setDraft] = useState<Draft>(INITIAL);
+  const [d, setD] = useState<Draft>(INITIAL);
+  const [stepIdx, setStepIdx] = useState(0);
+  const step = STEPS[stepIdx];
 
-  const update = <K extends keyof Draft>(k: K, v: Draft[K]) =>
-    setDraft((d) => ({ ...d, [k]: v }));
+  const set = <K extends keyof Draft>(k: K, v: Draft[K]) =>
+    setD((p) => ({ ...p, [k]: v }));
 
   const filteredClients = useMemo(() => {
-    if (draft.client) return [];
-    const q = draft.search.trim().toLowerCase();
+    if (d.client) return [];
+    const q = d.search.trim().toLowerCase();
     if (q.length < 2) return [];
     return clients
       .filter(
@@ -79,59 +116,95 @@ export default function AgentNewLoanFileRoute() {
           (c.email ?? "").toLowerCase().includes(q),
       )
       .slice(0, 6);
-  }, [clients, draft.search, draft.client]);
+  }, [clients, d.search, d.client]);
 
-  const amountNum = Number(draft.amount.replace(/[^0-9.]/g, ""));
-  const ltvNum = Number(draft.ltv);
-  const canSubmit =
-    !!draft.client &&
-    draft.address.trim().length > 0 &&
-    draft.loan_type.length > 0 &&
-    amountNum > 0 &&
-    ltvNum > 0 &&
-    ltvNum <= 100 &&
-    !create.isPending;
+  const locked = !!d.client;
+  const bName = locked ? d.client!.name : d.name;
+  const bEmail = locked ? d.client!.email ?? "" : d.email;
+  const bPhone = locked ? d.client!.phone ?? "" : d.phone;
+
+  const amountNum = Number(d.amount.replace(/[^0-9.]/g, ""));
+  const ltvNum = Number(d.ltv);
+
+  const stepValid = (s: (typeof STEPS)[number]): boolean => {
+    if (s === "Borrower")
+      return bName.trim().length > 0 && bEmail.trim().length > 3;
+    if (s === "Asset") return d.address.trim().length > 0;
+    if (s === "Numbers")
+      return amountNum > 0 && ltvNum > 0 && ltvNum <= 100;
+    return true;
+  };
+
+  const startDelayDays = (() => {
+    const v = Number(d.startValue.replace(/[^0-9.]/g, "")) || 0;
+    return d.startUnit === "hours" ? Math.round(v / 24) : Math.round(v);
+  })();
 
   const onSubmit = async () => {
-    if (!draft.client) return;
-    if (!draft.client.email) {
-      Alert.alert(
-        "Missing client email",
-        "This client has no email on file. Add one on the client detail page before opening a loan file.",
-      );
+    if (!bEmail.trim()) {
+      Alert.alert("Missing email", "A borrower email is required to open a loan file.");
       return;
     }
-    const cadence = CADENCE_CHOICES.find((c) => c.value === draft.cadence) ?? CADENCE_CHOICES[1];
+    const today = new Date();
+    const add_items = d.customDocs
+      .filter((c) => c.name.trim().length > 0)
+      .map((c) => {
+        const n = Number(c.offset.replace(/[^0-9.]/g, "")) || 0;
+        const days = d.docUnit === "hours" ? Math.round(n / 24) : Math.round(n);
+        const due = new Date(today);
+        due.setDate(due.getDate() + (days > 0 ? days : 7));
+        return { name: c.name.trim(), due_date: due.toISOString().slice(0, 10) };
+      });
+    const doc_overrides =
+      add_items.length > 0 || startDelayDays > 0
+        ? {
+            skip_names: [],
+            due_offset_overrides: {},
+            add_items,
+            ...(startDelayDays > 0
+              ? { collection_start_delay_days: startDelayDays }
+              : {}),
+          }
+        : undefined;
     try {
       const res = await create.mutateAsync({
         borrower: {
-          name: draft.client.name,
-          email: draft.client.email,
-          phone: draft.client.phone ?? "",
+          name: bName.trim(),
+          email: bEmail.trim(),
+          phone: bPhone.trim(),
+          entity_type: d.entity_type,
+          entity_name: d.entity_name.trim() || null,
+          experience: d.experience,
         },
         asset: {
-          address: draft.address.trim(),
-          city: draft.city.trim() || null,
-          state: draft.state.trim().toUpperCase() || null,
-          property_type: draft.property_type,
+          address: d.address.trim(),
+          city: d.city.trim() || null,
+          state: d.state.trim().toUpperCase() || null,
+          property_type: d.property_type,
+          annual_taxes: 0,
+          annual_insurance: 0,
         },
         numbers: {
-          type: draft.loan_type,
+          type: d.loan_type,
+          purpose: d.purpose === "refinance" ? "cash_out_refi" : "purchase",
           amount: amountNum,
           ltv: ltvNum,
-          // Sane default. Funding team adjusts after kickoff.
-          base_rate: cadence.floor,
+          base_rate: 8.0,
         },
         ai_rules: {
-          floor_rate: cadence.floor,
-          max_buy_down_points: 3.0,
+          floor_rate: 8.0,
+          max_buy_down_points: 1.5,
           require_soft_pull: true,
-          auto_send_terms: true,
+          auto_send_terms: false,
           doc_auto_verify: true,
           escalation_delta_bps: 25,
+          // Brokers are locked to app push for now (parity with web).
           notify_channel: "push",
           intro_message: null,
         },
+        deal_side: d.side,
+        source_attribution: d.sourceAttribution,
+        ...(doc_overrides ? { document_overrides: doc_overrides } : {}),
       });
       router.replace(`/agent/loan/${res.loan_id}` as Href);
     } catch (e) {
@@ -141,226 +214,368 @@ export default function AgentNewLoanFileRoute() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-          gap: 10,
-          borderBottomColor: t.line,
-          borderBottomWidth: 1,
-        }}
-      >
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, gap: 10, borderBottomColor: t.line, borderBottomWidth: 1 }}>
         <Pressable onPress={() => router.back()} hitSlop={8}>
           <Icon name="x" size={18} color={t.ink} />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 15, fontWeight: "800", color: t.ink }}>New funding file</Text>
-          <Text style={{ fontSize: 11, color: t.ink3 }}>Loan-file the AI will nurture. Separate from a client record.</Text>
+          <Text style={{ fontSize: 11, color: t.ink3 }}>
+            Step {stepIdx + 1}/{STEPS.length} · {step}
+          </Text>
         </View>
       </View>
 
       <KeyboardAware excludeTabBar>
-        <ScrollView contentContainerStyle={{ padding: 14, gap: 12, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
-          {/* Step 1 — Client */}
-          <Card pad={14}>
-            <Text style={{ fontSize: 12, fontWeight: "800", color: t.ink2, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 8 }}>Client</Text>
-            {draft.client ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: t.ink }}>{draft.client.name}</Text>
-                  <Text style={{ fontSize: 12, color: t.ink3 }}>{draft.client.email ?? "—"}</Text>
+        <ScrollView contentContainerStyle={{ padding: 14, gap: 12, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
+          {step === "Borrower" ? (
+            <Card pad={14}>
+              <SectionLabel t={t}>Buyer or Seller</SectionLabel>
+              <Segmented
+                t={t}
+                value={d.side}
+                opts={[
+                  { value: "buyer", label: "Buyer" },
+                  { value: "seller", label: "Seller" },
+                ]}
+                onChange={(v) => set("side", v as Side)}
+              />
+              <View style={{ height: 12 }} />
+              <SectionLabel t={t}>Purpose</SectionLabel>
+              <Segmented
+                t={t}
+                value={d.purpose}
+                opts={[
+                  { value: "purchase", label: "Purchase" },
+                  { value: "refinance", label: "Refinance" },
+                ]}
+                onChange={(v) => set("purpose", v as Purpose)}
+              />
+              <View style={{ height: 12 }} />
+              <SectionLabel t={t}>Loan program</SectionLabel>
+              <Chips
+                t={t}
+                value={d.loan_type}
+                opts={LoanTypeOptions.map((o) => ({ value: o.value, label: o.label }))}
+                onChange={(v) => set("loan_type", v)}
+              />
+              <View style={{ height: 14 }} />
+              <SectionLabel t={t}>Find an existing client</SectionLabel>
+              {d.client ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: t.ink }}>{d.client.name}</Text>
+                    <Text style={{ fontSize: 12, color: t.ink3 }}>{d.client.email ?? "—"}</Text>
+                  </View>
+                  <Pressable onPress={() => setD((p) => ({ ...p, client: null, search: "" }))}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: t.brand }}>Change</Text>
+                  </Pressable>
                 </View>
-                <Pressable onPress={() => setDraft((d) => ({ ...d, client: null, search: "" }))}>
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: t.brand }}>Change</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <>
-                <TextInput
-                  value={draft.search}
-                  onChangeText={(v) => update("search", v)}
-                  placeholder="Search client by name or email…"
-                  placeholderTextColor={t.ink4}
-                  style={{
-                    borderWidth: 1, borderColor: t.line, borderRadius: 10,
-                    paddingHorizontal: 12, paddingVertical: 10,
-                    color: t.ink, fontSize: 14,
-                  }}
-                />
-                {filteredClients.length === 0 && draft.search.trim().length >= 2 ? (
-                  <Text style={{ fontSize: 12, color: t.ink3, marginTop: 8 }}>
-                    No match. Create the client first on the Clients tab.
+              ) : (
+                <>
+                  <TextInput
+                    value={d.search}
+                    onChangeText={(v) => set("search", v)}
+                    placeholder="Search by name or email…"
+                    placeholderTextColor={t.ink4}
+                    style={inputStyle(t)}
+                  />
+                  <View style={{ gap: 4, marginTop: filteredClients.length ? 8 : 0 }}>
+                    {filteredClients.map((c) => (
+                      <Pressable
+                        key={c.id}
+                        onPress={() => setD((p) => ({ ...p, client: c, search: "" }))}
+                        style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, backgroundColor: t.surface2 }}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: "700", color: t.ink }}>{c.name}</Text>
+                        <Text style={{ fontSize: 11, color: t.ink3 }}>{c.email ?? "—"}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={{ fontSize: 11, color: t.ink3, marginTop: 6 }}>
+                    No match? Fill the fields below — we&apos;ll create a new client.
                   </Text>
-                ) : null}
-                <View style={{ gap: 4, marginTop: filteredClients.length ? 8 : 0 }}>
-                  {filteredClients.map((c) => (
-                    <Pressable
-                      key={c.id}
-                      onPress={() => setDraft((d) => ({ ...d, client: c, search: "" }))}
-                      style={{
-                        paddingVertical: 8, paddingHorizontal: 10,
-                        borderRadius: 8, backgroundColor: t.surface2,
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: t.ink }}>{c.name}</Text>
-                      <Text style={{ fontSize: 11, color: t.ink3 }}>{c.email ?? "—"}</Text>
-                    </Pressable>
-                  ))}
+                  <View style={{ height: 10 }} />
+                  <Fld t={t} label="Name" value={d.name} onChange={(v) => set("name", v)} />
+                  <Fld t={t} label="Email" value={d.email} onChange={(v) => set("email", v)} />
+                  <Fld t={t} label="Phone" value={d.phone} onChange={(v) => set("phone", v)} />
+                  <SectionLabel t={t}>Entity type</SectionLabel>
+                  <Chips
+                    t={t}
+                    value={d.entity_type}
+                    opts={EntityTypeOptions.map((o) => ({ value: o.value, label: o.label }))}
+                    onChange={(v) => set("entity_type", v)}
+                  />
+                  <View style={{ height: 8 }} />
+                  <Fld t={t} label="Entity name" value={d.entity_name} onChange={(v) => set("entity_name", v)} />
+                  <SectionLabel t={t}>Experience</SectionLabel>
+                  <Chips
+                    t={t}
+                    value={d.experience}
+                    opts={ExperienceTierOptions.map((o) => ({ value: o.value, label: o.label }))}
+                    onChange={(v) => set("experience", v)}
+                  />
+                </>
+              )}
+              <View style={{ height: 14 }} />
+              <SectionLabel t={t}>Source attribution</SectionLabel>
+              <Chips
+                t={t}
+                value={d.sourceAttribution}
+                opts={SOURCE_OPTS.map((o) => ({ value: o.value, label: o.label }))}
+                onChange={(v) => set("sourceAttribution", v)}
+              />
+            </Card>
+          ) : null}
+
+          {step === "Asset" ? (
+            <Card pad={14}>
+              <SectionLabel t={t}>Subject property</SectionLabel>
+              <Fld t={t} label="Street address" value={d.address} onChange={(v) => set("address", v)} />
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <View style={{ flex: 2 }}>
+                  <Fld t={t} label="City" value={d.city} onChange={(v) => set("city", v)} />
                 </View>
-              </>
-            )}
-          </Card>
-
-          {/* Step 2 — Subject property */}
-          <Card pad={14}>
-            <Text style={{ fontSize: 12, fontWeight: "800", color: t.ink2, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 8 }}>Subject property</Text>
-            <TextInput
-              value={draft.address}
-              onChangeText={(v) => update("address", v)}
-              placeholder="Street address"
-              placeholderTextColor={t.ink4}
-              style={inputStyle(t)}
-            />
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-              <TextInput
-                value={draft.city}
-                onChangeText={(v) => update("city", v)}
-                placeholder="City"
-                placeholderTextColor={t.ink4}
-                style={[inputStyle(t), { flex: 2 }]}
+                <View style={{ flex: 1 }}>
+                  <Fld t={t} label="State" value={d.state} onChange={(v) => set("state", v.toUpperCase().slice(0, 2))} />
+                </View>
+              </View>
+              <SectionLabel t={t}>Property type</SectionLabel>
+              <Chips
+                t={t}
+                value={d.property_type}
+                opts={PropertyTypeOptions.map((o) => ({ value: o.value, label: o.label }))}
+                onChange={(v) => set("property_type", v)}
               />
-              <TextInput
-                value={draft.state}
-                onChangeText={(v) => update("state", v.toUpperCase().slice(0, 2))}
-                placeholder="ST"
-                placeholderTextColor={t.ink4}
-                autoCapitalize="characters"
-                maxLength={2}
-                style={[inputStyle(t), { flex: 1 }]}
-              />
-            </View>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-              {PropertyTypeOptions.map((opt) => (
-                <ChipChoice
-                  key={opt.value}
-                  t={t}
-                  label={opt.label}
-                  active={draft.property_type === opt.value}
-                  onPress={() => update("property_type", opt.value)}
-                />
-              ))}
-            </View>
-          </Card>
+            </Card>
+          ) : null}
 
-          {/* Step 3 — Ask */}
-          <Card pad={14}>
-            <Text style={{ fontSize: 12, fontWeight: "800", color: t.ink2, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 8 }}>Loan ask</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-              {LoanTypeOptions.map((opt) => (
-                <ChipChoice
-                  key={opt.value}
-                  t={t}
-                  label={opt.label}
-                  active={draft.loan_type === opt.value}
-                  onPress={() => update("loan_type", opt.value)}
-                />
-              ))}
-            </View>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <View style={{ flex: 2 }}>
-                <Text style={{ fontSize: 11, color: t.ink3, marginBottom: 4 }}>Amount ($)</Text>
+          {step === "Numbers" ? (
+            <Card pad={14}>
+              <SectionLabel t={t}>Loan ask</SectionLabel>
+              <Fld t={t} label="Amount ($)" value={d.amount} onChange={(v) => set("amount", v.replace(/[^0-9]/g, ""))} keyboard="number-pad" />
+              <Fld t={t} label="LTV (%)" value={d.ltv} onChange={(v) => set("ltv", v.replace(/[^0-9.]/g, ""))} keyboard="decimal-pad" />
+              <Text style={{ fontSize: 11.5, color: t.ink3, marginTop: 4 }}>
+                Funding team tunes precise terms after kickoff.
+              </Text>
+            </Card>
+          ) : null}
+
+          {step === "AI & Messaging" ? (
+            <Card pad={14}>
+              <SectionLabel t={t}>Preferred channel</SectionLabel>
+              <View style={{ padding: 11, borderRadius: 10, borderWidth: 1, borderColor: t.line, backgroundColor: t.surface2 }}>
+                <Text style={{ fontSize: 13, color: t.ink }}>App push only</Text>
+              </View>
+
+              <View style={{ height: 14 }} />
+              <SectionLabel t={t}>Start collecting</SectionLabel>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <TextInput
-                  value={draft.amount}
-                  onChangeText={(v) => update("amount", v.replace(/[^0-9]/g, ""))}
+                  value={d.startValue}
+                  onChangeText={(v) => set("startValue", v.replace(/[^0-9]/g, ""))}
                   keyboardType="number-pad"
-                  placeholder="500000"
-                  placeholderTextColor={t.ink4}
-                  style={inputStyle(t)}
+                  style={[inputStyle(t), { width: 80 }]}
                 />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 11, color: t.ink3, marginBottom: 4 }}>LTV (%)</Text>
-                <TextInput
-                  value={draft.ltv}
-                  onChangeText={(v) => update("ltv", v.replace(/[^0-9.]/g, ""))}
-                  keyboardType="decimal-pad"
-                  placeholder="70"
-                  placeholderTextColor={t.ink4}
-                  style={inputStyle(t)}
-                />
-              </View>
-            </View>
-          </Card>
-
-          {/* Step 4 — AI cadence */}
-          <Card pad={14}>
-            <Text style={{ fontSize: 12, fontWeight: "800", color: t.ink2, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>AI cadence</Text>
-            <Text style={{ fontSize: 12, color: t.ink3, marginBottom: 8 }}>How aggressively the AI Secretary chases this file. Floor rate is set from the preset; funding team adjusts after kickoff.</Text>
-            <View style={{ flexDirection: "row", gap: 6 }}>
-              {CADENCE_CHOICES.map((c) => (
-                <ChipChoice
-                  key={c.value}
+                <Segmented
                   t={t}
-                  label={c.label}
-                  active={draft.cadence === c.value}
-                  onPress={() => update("cadence", c.value)}
+                  value={d.startUnit}
+                  opts={[
+                    { value: "hours", label: "Hours" },
+                    { value: "days", label: "Days" },
+                  ]}
+                  onChange={(v) => set("startUnit", v as Unit)}
+                  compact
                 />
-              ))}
-            </View>
-          </Card>
+              </View>
+              <Text style={{ fontSize: 11, color: t.ink4, marginTop: 6 }}>
+                {startDelayDays <= 0
+                  ? "Outreach starts immediately when you create the file."
+                  : `AI waits ~${startDelayDays} day(s) before chasing documents. Hours convert to whole days.`}
+              </Text>
 
-          <Pressable
-            onPress={onSubmit}
-            disabled={!canSubmit}
-            style={({ pressed }) => ({
-              backgroundColor: canSubmit ? t.brand : t.chip,
-              paddingVertical: 14,
-              borderRadius: 12,
-              alignItems: "center",
-              opacity: pressed ? 0.85 : 1,
-            })}
-          >
-            <Text style={{ color: canSubmit ? "#fff" : t.ink4, fontWeight: "800", fontSize: 14 }}>
-              {create.isPending ? "Creating…" : "Open loan file"}
-            </Text>
-          </Pressable>
+              <View style={{ height: 14 }} />
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <SectionLabel t={t}>Documents to collect</SectionLabel>
+                <Segmented
+                  t={t}
+                  value={d.docUnit}
+                  opts={[
+                    { value: "hours", label: "Hours" },
+                    { value: "days", label: "Days" },
+                  ]}
+                  onChange={(v) => set("docUnit", v as Unit)}
+                  compact
+                />
+              </View>
+              {d.customDocs.map((c, idx) => (
+                <View key={idx} style={{ flexDirection: "row", gap: 8, marginTop: 8, alignItems: "center" }}>
+                  <TextInput
+                    value={c.name}
+                    onChangeText={(v) =>
+                      set("customDocs", d.customDocs.map((x, i) => (i === idx ? { ...x, name: v } : x)))
+                    }
+                    placeholder="Document name"
+                    placeholderTextColor={t.ink4}
+                    style={[inputStyle(t), { flex: 1 }]}
+                  />
+                  <TextInput
+                    value={c.offset}
+                    onChangeText={(v) =>
+                      set("customDocs", d.customDocs.map((x, i) => (i === idx ? { ...x, offset: v.replace(/[^0-9]/g, "") } : x)))
+                    }
+                    keyboardType="number-pad"
+                    placeholder="7"
+                    placeholderTextColor={t.ink4}
+                    style={[inputStyle(t), { width: 56 }]}
+                  />
+                  <Pressable
+                    onPress={() => set("customDocs", d.customDocs.filter((_, i) => i !== idx))}
+                    hitSlop={8}
+                  >
+                    <Icon name="x" size={14} color={t.danger} />
+                  </Pressable>
+                </View>
+              ))}
+              <Pressable
+                onPress={() => set("customDocs", [...d.customDocs, { name: "", offset: "7" }])}
+                style={{ marginTop: 10, alignSelf: "flex-start", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 9, borderWidth: 1, borderColor: t.line }}
+              >
+                <Text style={{ fontSize: 12.5, fontWeight: "700", color: t.ink2 }}>+ Add document</Text>
+              </Pressable>
+            </Card>
+          ) : null}
+
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4 }}>
+            <Pressable
+              onPress={() => setStepIdx((x) => Math.max(0, x - 1))}
+              disabled={stepIdx === 0}
+              style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, borderWidth: 1, borderColor: t.line, opacity: stepIdx === 0 ? 0.4 : 1 }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "700", color: t.ink2 }}>Back</Text>
+            </Pressable>
+            {step !== "AI & Messaging" ? (
+              <Pressable
+                onPress={() => stepValid(step) && setStepIdx((x) => Math.min(STEPS.length - 1, x + 1))}
+                disabled={!stepValid(step)}
+                style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, backgroundColor: stepValid(step) ? t.brand : t.chip }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: "800", color: stepValid(step) ? "#fff" : t.ink4 }}>Next</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={onSubmit}
+                disabled={create.isPending}
+                style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, backgroundColor: create.isPending ? t.chip : t.brand }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: "800", color: create.isPending ? t.ink4 : "#fff" }}>
+                  {create.isPending ? "Creating…" : "Open loan file"}
+                </Text>
+              </Pressable>
+            )}
+          </View>
         </ScrollView>
       </KeyboardAware>
     </SafeAreaView>
   );
 }
 
-function ChipChoice({
-  t,
-  label,
-  active,
-  onPress,
-}: {
-  t: ReturnType<typeof useTheme>["t"];
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
+function SectionLabel({ t, children }: { t: T; children: ReactNode }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        paddingVertical: 7,
-        paddingHorizontal: 11,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: active ? t.brand : t.line,
-        backgroundColor: active ? t.brandSoft : t.surface2,
-      }}
-    >
-      <Text style={{ fontSize: 12, fontWeight: "700", color: active ? t.brand : t.ink2 }}>{label}</Text>
-    </Pressable>
+    <Text style={{ fontSize: 11, fontWeight: "800", color: t.ink3, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 6 }}>
+      {children}
+    </Text>
   );
 }
 
-function inputStyle(t: ReturnType<typeof useTheme>["t"]) {
+function Fld({
+  t,
+  label,
+  value,
+  onChange,
+  keyboard,
+}: {
+  t: T;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  keyboard?: "number-pad" | "decimal-pad";
+}) {
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <Text style={{ fontSize: 11, fontWeight: "700", color: t.ink3, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        keyboardType={keyboard}
+        placeholderTextColor={t.ink4}
+        style={inputStyle(t)}
+      />
+    </View>
+  );
+}
+
+function Segmented({
+  t,
+  value,
+  opts,
+  onChange,
+  compact,
+}: {
+  t: T;
+  value: string;
+  opts: { value: string; label: string }[];
+  onChange: (v: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <View style={{ flexDirection: "row", borderWidth: 1, borderColor: t.line, borderRadius: 10, overflow: "hidden" }}>
+      {opts.map((o) => {
+        const active = value === o.value;
+        return (
+          <Pressable
+            key={o.value}
+            onPress={() => onChange(o.value)}
+            style={{ flex: compact ? 0 : 1, paddingVertical: compact ? 7 : 10, paddingHorizontal: compact ? 14 : 0, alignItems: "center", backgroundColor: active ? t.brand : "transparent" }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : t.ink3 }}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function Chips({
+  t,
+  value,
+  opts,
+  onChange,
+}: {
+  t: T;
+  value: string;
+  opts: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+      {opts.map((o) => {
+        const active = value === o.value;
+        return (
+          <Pressable
+            key={o.value}
+            onPress={() => onChange(o.value)}
+            style={{ paddingVertical: 7, paddingHorizontal: 11, borderRadius: 999, borderWidth: 1, borderColor: active ? t.brand : t.line, backgroundColor: active ? t.brandSoft : t.surface2 }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: "700", color: active ? t.brand : t.ink2 }}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function inputStyle(t: T) {
   return {
     borderWidth: 1,
     borderColor: t.line,
@@ -369,5 +584,6 @@ function inputStyle(t: ReturnType<typeof useTheme>["t"]) {
     paddingVertical: 10,
     color: t.ink,
     fontSize: 14,
+    backgroundColor: t.surface2,
   } as const;
 }

@@ -972,18 +972,28 @@ export function useCreateLoanFile() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: {
-      borrower: { name: string; email: string; phone: string };
+      borrower: {
+        name: string;
+        email: string;
+        phone: string;
+        entity_type?: string;
+        entity_name?: string | null;
+        experience?: string;
+      };
       asset: {
         address: string;
         city: string | null;
         state: string | null;
         property_type: string;
+        annual_taxes?: number;
+        annual_insurance?: number;
       };
       numbers: {
         type: string;
         amount: number;
         ltv: number;
         base_rate: number;
+        purpose?: string;
       };
       ai_rules: {
         floor_rate: number;
@@ -994,6 +1004,14 @@ export function useCreateLoanFile() {
         escalation_delta_bps?: number;
         notify_channel?: string;
         intro_message?: string | null;
+      };
+      deal_side?: "buyer" | "seller";
+      source_attribution?: string;
+      document_overrides?: {
+        skip_names?: string[];
+        due_offset_overrides?: Record<string, number>;
+        add_items?: { name: string; due_date?: string | null }[];
+        collection_start_delay_days?: number;
       };
     }) =>
       fetcher<{ loan_id: string }>("/intake", {
