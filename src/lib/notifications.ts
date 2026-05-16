@@ -140,7 +140,11 @@ export function useRegisterPushToken(state: PushRegistrationState): void {
           method: "POST",
           body: JSON.stringify({
             token: state.token,
-            platform: state.provider ?? "expo",
+            // Send the OS so the backend can route the transport:
+            // "ios" → APNs, anything else → FCM. On iOS this is
+            // "ios" and the stored token is the raw APNs device
+            // token from getDevicePushTokenAsync().
+            platform: Platform.OS,
           }),
         });
         if (!cancelled) {
