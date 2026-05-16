@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Qualified Commercial",
-    "slug": "qcmobile",
+    "slug": "qcmobile-ios",
     "scheme": "qcmobile",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -15,7 +15,9 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Qualified Commercial uses your camera to scan HUD-1s, closing docs, and property photos for upload to your investor profile.",
         "NSPhotoLibraryUsageDescription": "Qualified Commercial reads your photo library so you can pick existing closing docs and property images to upload to your loan files.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       },
       "entitlements": {
         "aps-environment": "production"
@@ -53,7 +55,12 @@
       "typedRoutes": false
     },
     "extra": {
-      "apiUrl": "https://api.qualifiedcommercial.com"
-    }
+      "apiUrl": "https://api.qualifiedcommercial.com",
+      "router": {},
+      "eas": {
+        "projectId": "4a52d3d1-32fc-4d95-a143-78320f7c236f"
+      }
+    },
+    "owner": "unielogics"
   }
 }
