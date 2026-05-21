@@ -10,14 +10,14 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.qualifiedcommercial.mobile",
-      "buildNumber": "1",
       "icon": "./assets/icon.png",
       "infoPlist": {
         "NSCameraUsageDescription": "Qualified Commercial uses your camera to scan HUD-1s, closing docs, and property photos for upload to your investor profile.",
         "NSPhotoLibraryUsageDescription": "Qualified Commercial reads your photo library so you can pick existing closing docs and property images to upload to your loan files.",
         "UIBackgroundModes": [
           "remote-notification"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
         "aps-environment": "production"
