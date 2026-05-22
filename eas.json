@@ -21,6 +21,10 @@
       "autoIncrement": true,
       "ios": {
         "autoIncrement": "buildNumber"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.qualifiedcommercial.com",
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsucXVhbGlmaWVkY29tbWVyY2lhbC5jb20k"
       }
     }
   },
