@@ -27,7 +27,11 @@
   "submit": {
     "production": {
       "ios": {
-        "appleTeamId": "NUN7Z6KQ5Q"
+        "appleTeamId": "NUN7Z6KQ5Q",
+        "ascAppId": "6771983368",
+        "ascApiKeyPath": "C:/dev/AccessKeys/apple.p8",
+        "ascApiKeyId": "H6485UF723",
+        "ascApiKeyIssuerId": "ccdc1cec-bab9-430b-9752-05d76c5dd8d7"
       }
     }
   }
