@@ -24,8 +24,12 @@ export function LenderChatTab({ loanId, bottomPad }: { loanId: string; bottomPad
   const submit = async () => {
     const text = draft.trim();
     if (!text || send.isPending) return;
-    await send.mutateAsync({ loanId, body: text });
     setDraft("");
+    try {
+      await send.mutateAsync({ loanId, body: text });
+    } catch {
+      setDraft(text);
+    }
   };
 
   if (!connection || connection.status !== "connected") {
@@ -112,7 +116,6 @@ export function LenderChatTab({ loanId, bottomPad }: { loanId: string; bottomPad
           placeholder="Draft a message to the lender…"
           placeholderTextColor={t.ink4}
           multiline
-          editable={!send.isPending}
           style={{
             flex: 1, minHeight: 40, maxHeight: 120,
             paddingVertical: 10, paddingHorizontal: 14,

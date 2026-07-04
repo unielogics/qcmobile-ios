@@ -8,6 +8,7 @@ import { Icon } from "@/design-system/Icon";
 import { useCreditCurrent, useMe } from "@/hooks/useApi";
 import { Role } from "@/lib/enums.generated";
 import { TopBar } from "@/components/TopBar";
+import { creditDisplayFromCredit } from "@/lib/creditDisplay";
 import { openSystemNotificationSettings, usePushRegistration } from "@/lib/notifications";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -30,6 +31,7 @@ export default function Profile() {
   const { signOut } = useAuth();
   const { data: user } = useMe();
   const { data: credit } = useCreditCurrent();
+  const creditDisplay = creditDisplayFromCredit(credit);
   const push = usePushRegistration();
   const isClient = user?.role === Role.CLIENT;
   void _toggle;
@@ -57,6 +59,15 @@ export default function Profile() {
     { label: "Notifications", desc: notifDesc, icon: "bell", onPress: openSystemNotificationSettings },
     { label: "Two-Factor Auth", desc: "On · Authenticator app", icon: "key" },
     { label: "Tax Documents", desc: "2025 K-1 ready", icon: "doc" },
+  ];
+
+  // Legal — current effective versions of the three documents the user
+  // accepted at sign-up. Tapping opens the full prose with peer
+  // cross-links between Privacy / Terms / Disclosures.
+  const LEGAL_ROWS: AccountRow[] = [
+    { label: "Privacy Policy", desc: "Effective May 19, 2026 · v1.0", icon: "doc", onPress: () => router.push("/privacy") },
+    { label: "Terms & Conditions", desc: "Effective May 19, 2026 · v1.0", icon: "doc", onPress: () => router.push("/terms") },
+    { label: "Funding / AI / Communications Disclosure", desc: "Effective May 19, 2026 · v1.0", icon: "doc", onPress: () => router.push("/disclosures") },
   ];
 
   const handleSignOut = () => {
@@ -124,7 +135,7 @@ export default function Profile() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-                      <Text style={{ fontSize: 17, fontWeight: "700", letterSpacing: -0.3, color: t.ink }}>{credit.fico ?? "—"}</Text>
+                      <Text style={{ fontSize: 17, fontWeight: "700", letterSpacing: -0.3, color: creditDisplay.tone === "success" ? t.profit : creditDisplay.tone === "danger" ? t.danger : t.warn }}>{creditDisplay.label}</Text>
                       <Text style={{ fontSize: 11, fontWeight: "700", color: t.profit, letterSpacing: 0.4, textTransform: "uppercase" }}>Verified</Text>
                     </View>
                     <Text style={{ fontSize: 11, color: t.ink3, marginTop: 2 }}>
@@ -234,6 +245,33 @@ export default function Profile() {
                 borderBottomWidth: i < ACCOUNT_ROWS.length - 1 ? 1 : 0,
                 borderBottomColor: t.line,
                 backgroundColor: pressed && row.onPress ? t.surface2 : "transparent",
+              })}
+            >
+              <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: t.surface2, alignItems: "center", justifyContent: "center" }}>
+                <Icon name={row.icon} size={15} color={t.ink2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: "600", color: t.ink }}>{row.label}</Text>
+                <Text style={{ fontSize: 11, color: t.ink3, marginTop: 1 }}>{row.desc}</Text>
+              </View>
+              <Icon name="chevR" size={14} color={t.ink4} />
+            </Pressable>
+          ))}
+        </Card>
+
+        {/* Legal — full prose of the documents accepted at sign-up. */}
+        <SectionLabel>Legal</SectionLabel>
+        <Card pad={0} style={{ marginBottom: 18 }}>
+          {LEGAL_ROWS.map((row, i) => (
+            <Pressable
+              key={row.label}
+              onPress={row.onPress}
+              style={({ pressed }) => ({
+                flexDirection: "row", alignItems: "center", gap: 12,
+                paddingVertical: 13, paddingHorizontal: 14,
+                borderBottomWidth: i < LEGAL_ROWS.length - 1 ? 1 : 0,
+                borderBottomColor: t.line,
+                backgroundColor: pressed ? t.surface2 : "transparent",
               })}
             >
               <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: t.surface2, alignItems: "center", justifyContent: "center" }}>

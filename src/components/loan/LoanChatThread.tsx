@@ -45,8 +45,8 @@ export function LoanChatThread({ messages, viewerRole }: Props) {
       {filtered.length === 0 ? (
         <View style={{ padding: 20, alignItems: "center" }}>
           <Text style={{ fontSize: 12.5, color: t.ink3, textAlign: "center", lineHeight: 18 }}>
-            No messages yet. Start with a Live Chat to pause the AI and reply directly, or use
-            Ask AI to keep the AI working on this thread.
+            No messages yet. Start with a Live Chat to pause Elara and reply directly, or use
+            Ask Elara to keep Elara working on this thread.
           </Text>
         </View>
       ) : (
@@ -119,7 +119,7 @@ function bubbleTone(role: DealChatRole, t: ReturnType<typeof useTheme>["t"]) {
 }
 
 function roleLabel(m: LoanChatMessage): string {
-  if (m.from_role === "ai") return "Smart Assistant";
+  if (m.from_role === "ai") return "Elara";
   const roleWord =
     m.from_role === "super_admin" ? "Operator"
     : m.from_role === "broker" ? "Agent"

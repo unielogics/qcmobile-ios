@@ -103,7 +103,7 @@ export function computeEligibility(input: EligibilityInputs): EligibilityResult 
       banner: {
         kind: "credit-blocked",
         title: "Credit below threshold",
-        body: `Score ${fico} doesn't meet our 620 minimum. Start a guided new-loan workflow — our AI can route you to credit-repair options and structure a path forward.`,
+        body: "Your verified credit profile is below our minimum threshold. Start a guided new-loan workflow — our AI can route you to credit-repair options and structure a path forward.",
         ctaLabel: "Start guided workflow",
         ctaTarget: "new-loan",
       },

@@ -40,7 +40,7 @@ export default function AIAssistantSettingsRoute() {
         <Pressable onPress={() => router.back()} hitSlop={8}>
           <Icon name="x" size={18} color={t.ink} />
         </Pressable>
-        <Text style={{ fontSize: 14, fontWeight: "800", color: t.ink, flex: 1 }}>AI Assistant</Text>
+        <Text style={{ fontSize: 14, fontWeight: "800", color: t.ink, flex: 1 }}>Elara</Text>
       </View>
 
       <View style={{ flexDirection: "row", padding: 10, gap: 4 }}>
@@ -206,7 +206,7 @@ function FollowUpView() {
         paddingTop: 12, borderTopWidth: 1, borderTopColor: t.border,
       }}>
         ✓ Always ask before sending messages
-        {"\n"}✓ Drafts go to AI Inbox
+        {"\n"}✓ Drafts go to Elara Inbox
       </Text>
     </Card>
   );

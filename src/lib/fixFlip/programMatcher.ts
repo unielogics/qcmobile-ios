@@ -38,9 +38,9 @@ export function matchPrograms(inputs: FixFlipInputs): MatchOutput {
 
     // 1. Credit — the primary gatekeeper.
     if (credit == null) {
-      reasons.push("Credit score is required for program matching");
+      reasons.push("Credit profile is required for program matching");
     } else if (credit < p.minCreditScore) {
-      reasons.push(`Credit score below minimum (needs ${p.minCreditScore})`);
+      reasons.push("Credit profile below program minimum");
     }
 
     // 2. Experience.

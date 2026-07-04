@@ -1,4 +1,4 @@
-// Per-task detail sheet for the AI Secretary. Mounts on row tap.
+// Per-task detail sheet for Elara. Mounts on row tap.
 // Shows the task's objective + completion criteria + current owner,
 // and provides an explicit segmented Reassign control as a fallback
 // for users who can't reliably swipe (accessibility / large fingers).

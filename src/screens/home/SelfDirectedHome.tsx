@@ -23,7 +23,9 @@ import { Icon } from "@/design-system/Icon";
 import { QC_FMT } from "@/design-system/tokens";
 import { FredChart } from "@/components/FredChart";
 import { RateDetailModal } from "@/components/RateDetailModal";
+import { SharedAnalysisReports } from "@/components/SharedAnalysisReports";
 import {
+  useAnalysisRuns,
   useCalendar,
   useCurrentUser,
   useDashboardReport,
@@ -32,6 +34,7 @@ import {
   useMyCredit,
 } from "@/hooks/useApi";
 import { Role } from "@/lib/enums.generated";
+import { creditDisplayFromCredit } from "@/lib/creditDisplay";
 import type { Loan } from "@/lib/types";
 import { TopBar } from "@/components/TopBar";
 import { AIChatSheet } from "@/components/sheets/AIChatSheet";
@@ -89,7 +92,8 @@ export function SelfDirectedHome() {
   const { data: report } = useDashboardReport();
   const { data: events = [] } = useCalendar();
   const { data: credit } = useMyCredit();
-  // The dashboard FAB now opens the AI Intelligent Underwriter chat
+  const { data: sharedReports = [] } = useAnalysisRuns({ shared: true });
+  // The dashboard FAB now opens Elara chat
   // instead of the new-loan sheet. Per-loan AI chats stay accessible
   // from each loan's detail screen; the dashboard surface is the
   // account-wide entry point. New-loan creation moves to the
@@ -202,6 +206,8 @@ export function SelfDirectedHome() {
             }}
           />
         ) : null}
+
+        {isClient ? <SharedAnalysisReports reports={sharedReports} /> : null}
 
         {/* Market Rates — operators see them right under Pro Terms. For
             CLIENTs, market rates come AFTER their loans + portfolio
@@ -400,7 +406,8 @@ function KpiTile({
 // ── Pro Terms (CLIENT only) ─────────────────────────────────────────────
 function ProTermsCard({ credit, onPress }: { credit: { fico: number | null } | null | undefined; onPress: () => void }) {
   const { t, isDark } = useTheme();
-  const unlocked = !!credit && !!credit.fico;
+  const creditDisplay = creditDisplayFromCredit(credit);
+  const unlocked = creditDisplay.verified && creditDisplay.tone !== "danger";
   return (
     <Card pad={14} style={{ marginBottom: 20, backgroundColor: unlocked ? t.profitBg : t.dangerBg, borderColor: unlocked ? `${t.profit}40` : `${t.danger}40` }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
@@ -413,7 +420,7 @@ function ProTermsCard({ credit, onPress }: { credit: { fico: number | null } | n
           </Text>
           <Text style={{ fontSize: 12, color: t.ink2, marginTop: 1, lineHeight: 16 }}>
             {unlocked
-              ? `FICO ${credit!.fico} · valid through ${(credit as any)?.expires_at ? new Date((credit as any).expires_at).toLocaleDateString() : "—"}`
+              ? `${creditDisplay.label} · valid through ${(credit as any)?.expires_at ? new Date((credit as any).expires_at).toLocaleDateString() : "—"}`
               : "One soft pull unlocks all applications for 90 days · no score impact."}
           </Text>
         </View>

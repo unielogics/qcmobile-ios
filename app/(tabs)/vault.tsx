@@ -21,7 +21,7 @@ import { UploadKindSheet, type UploadKind } from "@/components/sheets/UploadKind
 import { UploadActionSheet, type PickedFile } from "@/components/sheets/UploadActionSheet";
 import { UploadChecklistPickerSheet, type ChecklistPick } from "@/components/sheets/UploadChecklistPickerSheet";
 import { PropertyPickerSheet } from "@/components/sheets/PropertyPickerSheet";
-import { useDocuments, useLoans, useUploadDocument } from "@/hooks/useApi";
+import { useDocuments, useDocumentsAnalysis, useLoans, useUploadDocument } from "@/hooks/useApi";
 import type { Document, Loan } from "@/lib/types";
 
 type DocStatus = Document["status"];
@@ -51,6 +51,7 @@ function tabFor(category: string | null | undefined): VaultTab {
 export default function Vault() {
   const { t } = useTheme();
   const { data: docs = [], isLoading } = useDocuments(null);
+  const { data: analysis } = useDocumentsAnalysis(null);
   const { data: loans = [] } = useLoans();
   const upload = useUploadDocument();
   const router = useRouter();
@@ -323,6 +324,87 @@ export default function Vault() {
             </Text>
           </Card>
         </View>
+
+        {/* AI underwriting summary */}
+        {analysis && analysis.summary.total > 0 ? (
+          <Card pad={14} style={{ marginBottom: 14 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: t.ink3, textTransform: "uppercase", letterSpacing: 0.8 }}>
+                AI underwriting summary
+              </Text>
+              <View
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 999,
+                  backgroundColor:
+                    analysis.summary.verdict === "clean"
+                      ? t.profitBg
+                      : analysis.summary.verdict === "needs_review"
+                        ? t.dangerBg
+                        : t.surface2,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: "800",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.4,
+                    color:
+                      analysis.summary.verdict === "clean"
+                        ? t.profit
+                        : analysis.summary.verdict === "needs_review"
+                          ? t.danger
+                          : t.ink3,
+                  }}
+                >
+                  {analysis.summary.verdict === "needs_review" ? "Needs review" : analysis.summary.verdict}
+                </Text>
+              </View>
+            </View>
+            <Text style={{ fontSize: 13, color: t.ink2, lineHeight: 19 }}>{analysis.summary.headline}</Text>
+            <Text style={{ fontSize: 11, color: t.ink3, marginTop: 4 }}>
+              {analysis.summary.reviewed}/{analysis.summary.total} reviewed · {analysis.summary.flagged} flagged · {analysis.summary.conflicts} conflict(s)
+            </Text>
+            {analysis.documents
+              .filter((d) => (d.issues?.length ?? 0) > 0 || d.status === "flagged" || d.ai_notes)
+              .slice(0, 6)
+              .map((d) => {
+                const flagged = (d.issues?.length ?? 0) > 0 || d.status === "flagged";
+                return (
+                  <View
+                    key={d.document_id}
+                    style={{
+                      marginTop: 8,
+                      padding: 9,
+                      borderRadius: 9,
+                      borderWidth: 1,
+                      borderColor: flagged ? `${t.danger}55` : t.line,
+                      backgroundColor: flagged ? t.dangerBg : t.surface2,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <Text numberOfLines={1} style={{ flex: 1, fontSize: 12.5, fontWeight: "700", color: t.ink }}>{d.name}</Text>
+                      {d.detected_type ? (
+                        <Text style={{ fontSize: 11, color: t.ink3 }}>
+                          {d.detected_type}{d.confidence != null ? ` · ${Math.round(d.confidence * 100)}%` : ""}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {d.ai_notes ? (
+                      <Text style={{ fontSize: 11.5, color: t.ink3, marginTop: 3, lineHeight: 16 }}>{d.ai_notes}</Text>
+                    ) : null}
+                    {(d.issues ?? []).map((iss, idx) => (
+                      <Text key={idx} style={{ fontSize: 11.5, color: t.danger, marginTop: 3, fontWeight: "600" }}>
+                        ⚠ {String((iss as Record<string, unknown>).field ?? (iss as Record<string, unknown>).type ?? "Conflict")}
+                      </Text>
+                    ))}
+                  </View>
+                );
+              })}
+          </Card>
+        ) : null}
 
         {/* Upload CTA — opens the kind picker first */}
         <Pressable

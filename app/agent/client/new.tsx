@@ -37,7 +37,7 @@ import { useTheme } from "@/design-system/ThemeProvider";
 import { Card } from "@/design-system/primitives";
 import { Icon } from "@/design-system/Icon";
 import { KeyboardAware } from "@/components/KeyboardAware";
-import { useBufferWizardIntent, useCreateClient } from "@/hooks/useApi";
+import { useBufferWizardIntent, useCreateClient, useSendIntakeLink } from "@/hooks/useApi";
 import { ClientSearchBlock } from "@/components/agent/ClientSearchBlock";
 import { OwnedAssetsEditor, NEW_ASSET, type OwnedAsset } from "@/components/agent/OwnedAssetsEditor";
 import type { Client } from "@/lib/types";
@@ -66,6 +66,7 @@ export default function AgentAddLeadRoute() {
   const { t } = useTheme();
   const router = useRouter();
   const create = useCreateClient();
+  const sendIntakeLink = useSendIntakeLink();
   const bufferIntent = useBufferWizardIntent();
   const [draft, setDraft] = useState<Draft>(INITIAL);
 
@@ -77,7 +78,8 @@ export default function AgentAddLeadRoute() {
     draft.side !== "seller"
       ? true
       : draft.listingIndex != null && draft.ownedAssets[draft.listingIndex]?.address.trim().length > 0;
-  const canSubmit = draft.name.trim().length > 0 && hasContact && sellerValid && !create.isPending;
+  const isSubmitting = create.isPending || sendIntakeLink.isPending;
+  const canSubmit = draft.name.trim().length > 0 && hasContact && sellerValid && !isSubmitting;
 
   const onPickExisting = (c: Client) => router.replace(`/agent/client/${c.id}` as Href);
 
@@ -109,6 +111,17 @@ export default function AgentAddLeadRoute() {
         });
       } catch {
         /* swallow — cadence configurable post-creation */
+      }
+      let intakeLinkError: string | null = null;
+      if (intent === "save_and_invite") {
+        try {
+          await sendIntakeLink.mutateAsync({ clientId: created.id });
+        } catch (e) {
+          intakeLinkError = e instanceof Error ? e.message : "The intake link was not queued.";
+        }
+      }
+      if (intakeLinkError) {
+        Alert.alert("Client saved", `Intake link was not queued. ${intakeLinkError}`);
       }
       router.replace(`/agent/client/${created.id}` as Href);
     } catch (e) {
@@ -357,13 +370,13 @@ export default function AgentAddLeadRoute() {
           })}
         >
           <Text style={{ color: t.ink, fontWeight: "800", fontSize: 13 }}>
-            {create.isPending ? "Saving…" : "Save"}
+            {isSubmitting ? "Saving…" : "Save"}
           </Text>
         </Pressable>
         <Pressable
           onPress={() => void submit("save_and_invite")}
           disabled={!canSubmit}
-          accessibilityLabel="Save and send invite"
+          accessibilityLabel="Save and send intake link"
           style={({ pressed }) => ({
             flex: 1,
             paddingVertical: 13,
@@ -374,7 +387,7 @@ export default function AgentAddLeadRoute() {
           })}
         >
           <Text style={{ color: "#fff", fontWeight: "800", fontSize: 13 }}>
-            {create.isPending ? "Saving…" : "Save + Send Invite"}
+            {isSubmitting ? "Sending…" : "Save + Send Intake Link"}
           </Text>
         </Pressable>
       </View>

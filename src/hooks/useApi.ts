@@ -7,6 +7,12 @@ import type {
   RecalcResponse,
   CreditPullStatus,
   CreditSummary,
+  BillingAddress,
+  PaymentAuthorizationStatusRead,
+  PaymentAuthorizationStartResponse,
+  PaymentAuthorizationCompleteResponse,
+  SetupIntentResponse,
+  CreditPullAccessRead,
   User,
   Client,
   Deal,
@@ -21,18 +27,33 @@ import type {
   AIChatSendResponse,
   ClientLivingProfile,
   RequiredDocument,
+  CalendarActivityItem,
   CalendarEvent,
   DashboardReport,
   FredSeriesSummary,
   PrequalRequest,
+  AdminPrequalCreate,
   PrequalRequestCreate,
   PrequalSellerOutcome,
   AITask,
+  AddressResolveResponse,
+  AddressSuggestion,
+  AnalysisProduct,
+  AnalysisSource,
+  AnalysisRun,
+  AnalysisRunCreate,
+  AnalysisRunPrequalRequest,
+  AnalysisRunPrequalResponse,
+  AnalysisRunUpdate,
   BrokerSettings,
+  AgentSettingsRead,
   EngagementSignal,
   FunnelMetrics,
   ListScope,
   NextAction,
+  PropertyIntelligenceLookupRequest,
+  PropertyIntelligenceSnapshot,
+  ShareAnalysisResponse,
 } from "@/lib/types";
 import type { ClientStage, LoanPurpose } from "@/lib/enums.generated";
 
@@ -146,6 +167,7 @@ export function useLoan(loanId: string | null | undefined) {
 export function useCreditCurrent() {
   const fetcher = useAuthedFetch();
   const key = useCacheKey();
+  const access = useCreditPullAccess();
   // Gate on Clerk readiness — useAuthedFetch returns a never-resolving
   // promise while Clerk is still loading, which would otherwise leave
   // this query stuck in `pending` forever for any screen that mounts
@@ -154,9 +176,21 @@ export function useCreditCurrent() {
   return useQuery({
     queryKey: ["credit-current", key],
     queryFn: () => fetcher<CreditPullStatus | null>("/credit/current"),
-    enabled: isLoaded,
+    enabled: isLoaded && (access.data ? access.data.can_run_credit : false),
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCurrentCredit(clientId: string | null | undefined) {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  const access = useCreditPullAccess();
+  return useQuery({
+    queryKey: ["credit", clientId ?? null, key],
+    queryFn: () => fetcher<CreditPullStatus | null>(`/credit/current?client_id=${encodeURIComponent(clientId!)}`),
+    enabled: !!clientId && (access.data ? access.data.can_run_credit : false),
     staleTime: 30 * 1000,
   });
 }
@@ -180,10 +214,85 @@ export function useMyClient() {
 export function useCreditSummary(pullId: string | null | undefined) {
   const fetcher = useAuthedFetch();
   const key = useCacheKey();
+  const access = useCreditPullAccess();
   return useQuery({
     queryKey: ["credit-summary", pullId, key],
     queryFn: () => fetcher<CreditSummary>(`/credit/pulls/${pullId}/summary`),
-    enabled: !!pullId,
+    enabled: !!pullId && (access.data ? access.data.can_run_credit : false),
+  });
+}
+
+export function useCreditPullAccess() {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  const { isLoaded } = useAuth();
+  return useQuery({
+    queryKey: ["credit-pull-access", key],
+    queryFn: () => fetcher<CreditPullAccessRead>("/credit/pull-access"),
+    enabled: isLoaded,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function usePaymentAuthorizationStatus() {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  const { isLoaded } = useAuth();
+  return useQuery({
+    queryKey: ["payment-authorization-status", key],
+    queryFn: () => fetcher<PaymentAuthorizationStatusRead>("/billing/payment-authorization/status"),
+    enabled: isLoaded,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useStartPaymentAuthorization() {
+  const fetcher = useAuthedFetch();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      fetcher<PaymentAuthorizationStartResponse>("/billing/payment-authorization/start", {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["payment-authorization-status"] }),
+  });
+}
+
+export function useCreateSetupIntent() {
+  const fetcher = useAuthedFetch();
+  return useMutation({
+    mutationFn: (payload: { authorization_id?: string; billing?: BillingAddress }) =>
+      fetcher<SetupIntentResponse>("/billing/setup-intents", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  });
+}
+
+export function useCompletePaymentAuthorization() {
+  const fetcher = useAuthedFetch();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      authorization_id: string;
+      setup_intent_id: string;
+      typed_name: string;
+      esign_consent: boolean;
+      payment_terms_consent: boolean;
+      signature_data_url: string;
+      billing: BillingAddress;
+      device_metadata?: Record<string, unknown>;
+    }) =>
+      fetcher<PaymentAuthorizationCompleteResponse>("/billing/payment-authorization/complete", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payment-authorization-status"] });
+      qc.invalidateQueries({ queryKey: ["credit-pull-access"] });
+      qc.invalidateQueries({ queryKey: ["credit-current"] });
+    },
   });
 }
 
@@ -266,6 +375,41 @@ export function useDocuments(loanId: string | null | undefined) {
   return useQuery({
     queryKey: ["documents", loanId, key],
     queryFn: () => fetcher<Document[]>(loanId ? `/documents?loan_id=${loanId}` : "/documents"),
+  });
+}
+
+export interface DocAnalysisResponse {
+  summary: {
+    total: number;
+    reviewed: number;
+    flagged: number;
+    conflicts: number;
+    verdict: "clean" | "needs_review" | "pending";
+    headline: string;
+  };
+  documents: {
+    document_id: string;
+    name: string;
+    status: string;
+    detected_type: string | null;
+    confidence: number | null;
+    ai_notes: string | null;
+    ai_scan_status: string | null;
+    issues: Record<string, unknown>[];
+  }[];
+}
+// Aggregate AI underwriting read. No arg → backend auto-scopes to the
+// signed-in client's docs (CLIENT role); pass a loanId to narrow.
+export function useDocumentsAnalysis(loanId?: string | null) {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  return useQuery({
+    queryKey: ["documents-analysis", loanId ?? null, key],
+    queryFn: () =>
+      fetcher<DocAnalysisResponse>(
+        loanId ? `/documents/analysis?loan_id=${loanId}` : "/documents/analysis",
+      ),
+    staleTime: 30 * 1000,
   });
 }
 
@@ -588,7 +732,25 @@ export function useDashboardReport() {
 }
 
 // /calendar — agenda events (today + upcoming)
-export function useCalendar() {
+export interface CalendarQueryParams {
+  from?: string | null;
+  to?: string | null;
+  days?: number;
+  include_cancelled?: boolean;
+}
+
+function calendarQuery(params?: CalendarQueryParams & { limit?: number }): string {
+  const qs = new URLSearchParams();
+  if (params?.from) qs.set("from", params.from);
+  if (params?.to) qs.set("to", params.to);
+  if (params?.days != null) qs.set("days", String(params.days));
+  if (params?.include_cancelled != null) qs.set("include_cancelled", String(params.include_cancelled));
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  return query ? `?${query}` : "";
+}
+
+export function useCalendar(params?: CalendarQueryParams) {
   const fetcher = useAuthedFetch();
   const key = useCacheKey();
   // Gate on Clerk's `isLoaded`. When the user hits the Calendar tab
@@ -601,12 +763,24 @@ export function useCalendar() {
   // fetcher → resolves immediately.
   const { isLoaded } = useAuth();
   return useQuery({
-    queryKey: ["calendar", key, isLoaded],
-    queryFn: () => fetcher<CalendarEvent[]>("/calendar"),
+    queryKey: ["calendar", key, isLoaded, params ?? {}],
+    queryFn: () => fetcher<CalendarEvent[]>(`/calendar${calendarQuery(params)}`),
     enabled: isLoaded,
     // Borrower hits the tab expecting fresh status — emitter-driven
     // events (doc due, closing day, etc.) appear without a manual
     // refresh.
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCalendarActivity(params?: CalendarQueryParams & { limit?: number }) {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  const { isLoaded } = useAuth();
+  return useQuery({
+    queryKey: ["calendarActivity", key, isLoaded, params ?? {}],
+    queryFn: () => fetcher<CalendarActivityItem[]>(`/calendar/activity${calendarQuery(params)}`),
+    enabled: isLoaded,
     staleTime: 30 * 1000,
   });
 }
@@ -636,6 +810,7 @@ export function useUpdateCalendarEvent() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["calendar"] });
+      qc.invalidateQueries({ queryKey: ["calendarActivity"] });
     },
   });
 }
@@ -708,6 +883,150 @@ export function useFreeCalc() {
   });
 }
 
+export function useAddressAutocomplete(input: string, sessionToken?: string | null) {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  const q = input.trim();
+  return useQuery({
+    queryKey: ["property-intelligence", "address-autocomplete", q, sessionToken ?? null, key],
+    queryFn: () =>
+      fetcher<AddressSuggestion[]>("/property-intelligence/address/autocomplete", {
+        method: "POST",
+        body: JSON.stringify({ input: q, session_token: sessionToken ?? null }),
+      }),
+    enabled: q.length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useResolveAddress() {
+  const fetcher = useAuthedFetch();
+  return useMutation({
+    mutationFn: (payload: { place_id?: string | null; address?: string | null; session_token?: string | null }) =>
+      fetcher<AddressResolveResponse>("/property-intelligence/address/resolve", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  });
+}
+
+export function usePropertyIntelligenceLookup() {
+  const fetcher = useAuthedFetch();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: PropertyIntelligenceLookupRequest) =>
+      fetcher<PropertyIntelligenceSnapshot>("/property-intelligence/lookup", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["property-intelligence"] }),
+  });
+}
+
+export function useCreateAnalysisRun() {
+  const fetcher = useAuthedFetch();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: AnalysisRunCreate) =>
+      fetcher<AnalysisRun>("/analysis-runs", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["analysis-runs"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
+export function useUpdateAnalysisRun() {
+  const fetcher = useAuthedFetch();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: AnalysisRunUpdate }) =>
+      fetcher<AnalysisRun>(`/analysis-runs/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["analysis-runs"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
+export function useShareAnalysisRun() {
+  const fetcher = useAuthedFetch();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) =>
+      fetcher<ShareAnalysisResponse>(`/analysis-runs/${runId}/share-to-client`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["analysis-runs"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
+export function useConvertAnalysisRunToPrequal() {
+  const fetcher = useAuthedFetch();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ runId, payload }: { runId: string; payload: AnalysisRunPrequalRequest }) =>
+      fetcher<AnalysisRunPrequalResponse>(`/analysis-runs/${runId}/prequal-request`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["analysis-runs"] });
+      qc.invalidateQueries({ queryKey: ["prequal-requests"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: ["loans"] });
+    },
+  });
+}
+
+export function useAnalysisRuns(filters?: {
+  client_id?: string | null;
+  loan_id?: string | null;
+  product?: AnalysisProduct | null;
+  tool_source?: AnalysisSource | null;
+  updated_since?: string | null;
+  limit?: number | null;
+  shared?: boolean;
+}) {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  const qs = new URLSearchParams();
+  if (filters?.client_id) qs.set("client_id", filters.client_id);
+  if (filters?.loan_id) qs.set("loan_id", filters.loan_id);
+  if (filters?.product) qs.set("product", filters.product);
+  if (filters?.tool_source) qs.set("tool_source", filters.tool_source);
+  if (filters?.updated_since) qs.set("updated_since", filters.updated_since);
+  if (filters?.limit) qs.set("limit", String(filters.limit));
+  if (filters?.shared != null) qs.set("shared", String(filters.shared));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return useQuery({
+    queryKey: ["analysis-runs", filters ?? {}, key],
+    queryFn: () => fetcher<AnalysisRun[]>(`/analysis-runs${suffix}`).catch(() => [] as AnalysisRun[]),
+    retry: false,
+  });
+}
+
+export function useAdminPrequalRequests(status?: string | null) {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return useQuery({
+    queryKey: ["prequal-requests", "admin", status ?? "all", key],
+    queryFn: () => fetcher<PrequalRequest[]>(`/admin/prequal-requests${qs}`).catch(() => [] as PrequalRequest[]),
+    staleTime: 30 * 1000,
+    retry: false,
+  });
+}
+
 // /credit/current?client_id=self — explicit "my own credit" lookup. Mirrors
 // desktop's useMyCredit. The plain useCreditCurrent (no scope) works for
 // any role; this version is the one to call from CLIENT-only flows so the
@@ -759,6 +1078,23 @@ export function useSubmitPrequalRequest() {
   });
 }
 
+export function useAdminCreateManualPrequal() {
+  const fetcher = useAuthedFetch();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: AdminPrequalCreate) =>
+      fetcher<PrequalRequest>("/admin/prequal-requests", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["prequal-requests"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: ["fixFlipScenarios"] });
+    },
+  });
+}
+
 export function useAcceptPrequalOffer() {
   const fetcher = useAuthedFetch();
   const qc = useQueryClient();
@@ -796,13 +1132,25 @@ export function useDeclinePrequalOffer() {
 // All ported from QCDashboard/src/hooks/useApi.ts. Same endpoints,
 // same query-key shape. Used exclusively by the app/agent/* routes.
 
-export function useClients(scope?: ListScope) {
+export function useClients(scope?: ListScope, options?: { enabled?: boolean }) {
   const fetcher = useAuthedFetch();
   const key = useCacheKey();
   const qs = scope ? `?scope=${scope}` : "";
   return useQuery({
     queryKey: ["clients", scope ?? "auto", key],
     queryFn: () => fetcher<Client[]>(`/clients${qs}`),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useUsers(options?: { enabled?: boolean }) {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  return useQuery({
+    queryKey: ["users", key],
+    queryFn: () => fetcher<User[]>("/users").catch(() => [] as User[]),
+    enabled: options?.enabled ?? true,
+    retry: false,
   });
 }
 
@@ -860,6 +1208,17 @@ export function useBrokerSettings() {
   return useQuery({
     queryKey: ["brokerSettings", key],
     queryFn: () => fetcher<BrokerSettings>("/me/broker-settings"),
+    retry: (failureCount, error) => !isNotFound(error) && failureCount < 1,
+  });
+}
+
+export function useAgentSettings(options?: { enabled?: boolean }) {
+  const fetcher = useAuthedFetch();
+  const key = useCacheKey();
+  return useQuery({
+    queryKey: ["agentSettings", key],
+    queryFn: () => fetcher<AgentSettingsRead>("/me/broker-settings"),
+    enabled: options?.enabled ?? true,
     retry: (failureCount, error) => !isNotFound(error) && failureCount < 1,
   });
 }
@@ -1192,7 +1551,7 @@ import {
   mockExperienceMode, type ExperienceModeState, type ExperienceMode,
   mockParsedCredit, type ParsedCreditReport,
   mockAIQuestions, type AIQuestion,
-  mockLoanWorkspace, type LoanWorkspace, type LoanChatMessage, type DealChatMode,
+  mockLoanWorkspace, type LoanWorkspace, type LoanChatMessage, type DealChatMode, type DealChatRole,
   mockLoanCriteria, type LoanCriteria,
 } from "@/lib/mocks";
 
@@ -1230,7 +1589,9 @@ export function useLoanChat(loanId: string | null | undefined) {
 }
 
 export interface LoanChatSendResponse {
-  message: LoanChatMessage;
+  message: LoanChatMessage | null;
+  ai_reply?: LoanChatMessage | null;
+  kind?: string;
   paused_until: string | null;
 }
 
@@ -1329,20 +1690,67 @@ export function useSendLoanChat() {
       body,
       mode,
       attachment_document_id,
+      optimistic_from_role,
+      optimistic_client_visible,
     }: {
       loanId: string;
       body: string;
       mode: DealChatMode;
       attachment_document_id?: string | null;
+      optimistic_from_role?: DealChatRole;
+      optimistic_client_visible?: boolean;
     }) =>
       fetcher<LoanChatSendResponse>(`/loans/${loanId}/chat`, {
         method: "POST",
         body: JSON.stringify({ body, mode, attachment_document_id }),
       }),
-    onSuccess: (_, vars) => {
+    onMutate: async (vars) => {
+      if (vars.mode === "instruct" || vars.mode === "broker_suggestion") return null;
+      const optimisticId = `local-${Date.now()}`;
+      const role = vars.optimistic_from_role ?? (vars.mode === "broker_question" ? "broker_internal" : "client");
+      const optimistic: LoanChatMessage = {
+        id: optimisticId,
+        body: vars.body,
+        from_role: role,
+        from_user_id: null,
+        from_name: "You",
+        client_visible: vars.optimistic_client_visible ?? vars.mode !== "broker_question",
+        created_at: new Date().toISOString(),
+        attachment: vars.attachment_document_id
+          ? { document_id: vars.attachment_document_id, name: "Attachment" }
+          : null,
+      };
+      qc.setQueriesData<LoanChatMessage[]>(
+        { queryKey: ["loanChat", vars.loanId] },
+        (old) => (old ? [...old, optimistic] : [optimistic])
+      );
+      return { optimisticId };
+    },
+    onSuccess: (res, vars, ctx) => {
+      if (ctx?.optimisticId) {
+        qc.setQueriesData<LoanChatMessage[]>(
+          { queryKey: ["loanChat", vars.loanId] },
+          (old) => {
+            if (!old) return old;
+            const withoutOptimistic = old.filter((m) => m.id !== ctx.optimisticId);
+            const next = res.message ? [...withoutOptimistic, res.message] : withoutOptimistic;
+            if (res.ai_reply && !next.some((m) => m.id === res.ai_reply?.id)) {
+              next.push(res.ai_reply);
+            }
+            return next;
+          }
+        );
+      }
       qc.invalidateQueries({ queryKey: ["loanChat", vars.loanId] });
       qc.invalidateQueries({ queryKey: ["loanWorkspace", vars.loanId] });
       qc.invalidateQueries({ queryKey: ["activities", vars.loanId] });
+    },
+    onError: (_err, vars, ctx) => {
+      if (!ctx?.optimisticId) return;
+      qc.setQueriesData<LoanChatMessage[]>(
+        { queryKey: ["loanChat", vars.loanId] },
+        (old) => old?.filter((m) => m.id !== ctx.optimisticId)
+      );
     },
   });
 }
@@ -1381,19 +1789,21 @@ export function useCreateCalendarEvent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: {
-      loan_id: string;
+      loan_id?: string | null;
       kind: string;
       title: string;
       description?: string | null;
       who?: string | null;
       starts_at: string;
       duration_min?: number | null;
+      priority?: "low" | "medium" | "high" | null;
       owner_user_id?: string | null;
     }) =>
       fetcher(`/calendar`, { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ["loanTodo", vars.loan_id] });
+      if (vars.loan_id) qc.invalidateQueries({ queryKey: ["loanTodo", vars.loan_id] });
       qc.invalidateQueries({ queryKey: ["calendar"] });
+      qc.invalidateQueries({ queryKey: ["calendarActivity"] });
     },
   });
 }
@@ -1730,7 +2140,7 @@ export function useFlagDocument() {
   });
 }
 
-// ── AI Secretary ──────────────────────────────────────────────────────
+// ── Elara ──────────────────────────────────────────────────────
 
 export function useAIQuestions(loanId: string | null | undefined) {
   const fetcher = useAuthedFetch();

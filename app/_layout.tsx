@@ -114,7 +114,7 @@ export default function RootLayout() {
   }));
   return (
     // GestureHandlerRootView is required by react-native-gesture-handler
-    // for the Swipeable on the AI Secretary screen to receive gestures.
+    // for the Swipeable on Elara screen to receive gestures.
     // SafeAreaProvider ensures useSafeAreaInsets() returns real values
     // everywhere (Android edge-to-edge fix).
     <GestureHandlerRootView style={{ flex: 1 }}>

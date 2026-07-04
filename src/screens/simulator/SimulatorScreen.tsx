@@ -27,6 +27,7 @@ import {
   type TransactionType,
 } from "@/lib/eligibility";
 import { isProductKeyEnabled } from "@/lib/products";
+import { creditDisplayFromFico, creditDisplayFromSummary } from "@/lib/creditDisplay";
 import { RangeGauge } from "@/components/RangeGauge";
 import { LoanSimulator } from "@/components/LoanSimulator";
 import { AmortizationSchedule, HudDonutChart } from "@/components/SimulatorCharts";
@@ -857,7 +858,7 @@ function EligibilityBannerCard({
 }
 
 // ── Compact credit + experience header ───────────────────────────────────
-// Borrower's vital stats — FICO, tier, properties owned, any eligibility
+// Borrower's vital stats — credit tier, properties owned, any eligibility
 // banner — all in one tappable card. Collapsed by default so the
 // calculator dominates the screen. Mirrors qcdesktop CollapsibleCreditSummary.
 function CompactCreditHeader({
@@ -885,7 +886,14 @@ function CompactCreditHeader({
           hasYearOfOwnership ? " · 1+ yr held" : ""
         }`;
 
-  const tierLabel = summary?.tier ?? (fico == null ? "no pull" : "tier unknown");
+  const creditDisplay = summary ? creditDisplayFromSummary(summary) : creditDisplayFromFico(fico);
+  const creditColors = creditDisplay.tone === "success"
+    ? { bg: t.profitBg, fg: t.profit }
+    : creditDisplay.tone === "danger"
+      ? { bg: t.dangerBg, fg: t.danger }
+      : creditDisplay.tone === "warning"
+        ? { bg: t.warnBg, fg: t.warn }
+        : { bg: t.chip, fg: t.ink3 };
   const hasBanner = banner != null;
 
   return (
@@ -901,18 +909,20 @@ function CompactCreditHeader({
           opacity: pressed ? 0.85 : 1,
         })}
       >
-        <Text
+        <View
           style={{
-            fontSize: 22,
-            fontWeight: "800",
-            color: fico == null ? t.ink3 : t.ink,
-            fontVariant: ["tabular-nums"],
-            minWidth: 40,
-            textAlign: "center",
+            minWidth: 92,
+            borderRadius: 999,
+            backgroundColor: creditColors.bg,
+            paddingHorizontal: 9,
+            paddingVertical: 6,
+            alignItems: "center",
           }}
         >
-          {fico ?? "—"}
-        </Text>
+          <Text style={{ fontSize: 11, fontWeight: "800", color: creditColors.fg, textAlign: "center" }}>
+            {creditDisplay.shortLabel}
+          </Text>
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text
             style={{
@@ -924,7 +934,7 @@ function CompactCreditHeader({
             }}
             numberOfLines={1}
           >
-            Credit · {tierLabel}
+            Credit · {creditDisplay.label}
           </Text>
           <Text
             style={{ fontSize: 12, color: t.ink2, marginTop: 2 }}

@@ -16,6 +16,7 @@ import { PauseBanner } from "@/components/loan/PauseBanner";
 import { ContextMenu, type ContextMenuItem } from "@/components/agent/ContextMenu";
 import { ReassignAgentSheet } from "@/components/agent/ReassignAgentSheet";
 import { ClientStageOptions } from "@/lib/enums.generated";
+import { creditDisplayFromFico } from "@/lib/creditDisplay";
 import type { ClientStage } from "@/lib/enums.generated";
 import type { Client } from "@/lib/types";
 
@@ -69,7 +70,7 @@ export default function AgentClientRoute() {
 
   const onMessage = async () => {
     // Loan-specific conversation lives in the loan workspace chat
-    // (loan_chat_messages) — the same surface the client sees + the AI
+    // (loan_chat_messages) — the same surface the client sees + Elara
     // writes into. Sending here via the broker's per-user AI thread
     // would leave the client unaware, so we route to the loan page's
     // Messages tab whenever a loan exists. With no loan yet, fall back
@@ -116,13 +117,13 @@ export default function AgentClientRoute() {
   // spawns the lending AI thread with the first memory-aware message,
   // and drops an AITask in the funding queue. Two-step UX:
   //
-  //   1. Confirm Alert — "Ready to send X to lending? The AI will…"
+  //   1. Confirm Alert — "Ready to send X to lending? Elara will…"
   //   2. After fire — success Alert with the handoff summary + the
-  //      first question the Lending AI asked.
+  //      first question the Lending Elara asked.
   const onRequestPrequal = () => {
     Alert.alert(
       `Ready to send ${client.name} to lending?`,
-      "The AI will:\n\n" +
+      "Elara will:\n\n" +
         "• Summarize the realtor conversation\n" +
         "• Carry over relevant facts and files\n" +
         "• Identify missing lending items\n" +
@@ -145,7 +146,7 @@ export default function AgentClientRoute() {
                   ? `\n\nLending AI will collect:\n• ${result.missing_lending_items.join("\n• ")}`
                   : "";
               const firstQ = result.first_lending_question
-                ? `\n\nFirst question the AI asked:\n${result.first_lending_question}`
+                ? `\n\nFirst question Elara asked:\n${result.first_lending_question}`
                 : "";
               Alert.alert(
                 `${client.name} moved to Lending Intake`,
@@ -192,7 +193,7 @@ export default function AgentClientRoute() {
     );
   };
 
-  const primaryAction =
+  const readyForLendingAction =
     client.stage === "lead" && client.lead_promotion_status !== "agent_requested_review"
       ? {
           label: "Ready for lending",
@@ -200,7 +201,10 @@ export default function AgentClientRoute() {
           onPress: onRequestPrequal,
           loading: busy === "prequal",
         }
-      : client.stage === "verified"
+      : null;
+
+  const primaryAction =
+    client.stage === "verified"
         ? {
             label: "Start funding",
             icon: "bolt" as const,
@@ -280,6 +284,16 @@ export default function AgentClientRoute() {
               hasPhone={!!client.phone}
               hasEmail={!!client.email}
             />
+            {readyForLendingAction ? (
+              <ActionButton
+                label={readyForLendingAction.label}
+                icon={readyForLendingAction.icon}
+                onPress={readyForLendingAction.onPress}
+                loading={readyForLendingAction.loading}
+                primary
+                wide
+              />
+            ) : null}
             <NurtureActivity clientId={client.id} />
           </>
         ) : null}
@@ -287,7 +301,7 @@ export default function AgentClientRoute() {
         {/* Active AI Plan card (alembic 0032). Trumps the legacy
             missing_facts walk; renders the playbook-resolved active
             list for THIS client + lets the agent set per-client
-            custom instructions for the AI. */}
+            custom instructions for Elara. */}
         <ClientAIPlanCard clientId={client.id} loanId={null} />
 
         <AgentRelationshipWorkspace
@@ -379,9 +393,21 @@ export default function AgentClientRoute() {
             wide
           />
         ) : null}
-        <View style={{ flexDirection: "row", gap: 8, marginTop: primaryAction ? 10 : 0 }}>
-          <ActionButton label="Call" icon="bolt" onPress={onCall} disabled={!client.phone} compact />
-          <ActionButton label="Message" icon="chat" onPress={onMessage} loading={busy === "message"} compact />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: primaryAction ? 10 : 0 }}>
+          <ActionButton label="Call" icon="bolt" onPress={onCall} disabled={!client.phone} compact tone="call" />
+          <ActionButton label="Message" icon="chat" onPress={onMessage} loading={busy === "message"} compact tone="message" />
+          <ActionButton
+            label="Analyze"
+            icon="calc"
+            onPress={() => router.push({ pathname: "/agent/deal-analyzer", params: { clientId: client.id } } as Href)}
+            compact
+          />
+          <ActionButton
+            label="Simulate"
+            icon="sliders"
+            onPress={() => router.push({ pathname: "/agent/simulate", params: { clientId: client.id } } as Href)}
+            compact
+          />
           {client.stage === "lead" ? (
             <ActionButton label="Contacted" icon="check" onPress={onMarkContacted} loading={busy === "contacted"} compact />
           ) : null}
@@ -429,6 +455,7 @@ function AgentRelationshipWorkspace({
   const side = client.client_type ?? "buyer";
   const isSeller = side === "seller";
   const stage = client.stage ?? "lead";
+  const creditDisplay = creditDisplayFromFico(client.fico);
   const actions = isSeller
     ? [
         stage === "lead" ? "Confirm listing timeline and target net." : "Update seller timeline after each funding milestone.",
@@ -436,7 +463,7 @@ function AgentRelationshipWorkspace({
         activeLoanCount === 0 ? "Qualify buyer financing path before handoff." : "Coordinate offer and funding conditions.",
       ]
     : [
-        client.fico ? "Confirm buy box, budget, and close date." : "Ask client to complete credit readiness.",
+        creditDisplay.verified ? "Confirm buy box, budget, and close date." : "Ask client to complete credit readiness.",
         totalDocs === 0 ? "Collect intake, bank statements, entity docs, and property facts." : "Review received docs before handoff.",
         activeLoanCount === 0 ? "Move to lending once verified." : "Coordinate borrower conditions with funding updates.",
       ];
@@ -461,7 +488,7 @@ function AgentRelationshipWorkspace({
       <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
         <MiniStat label="Files" value={activeLoanCount ? `${activeLoanCount}/${loanCount}` : "None"} />
         <MiniStat label="Docs" value={`${verifiedDocs}/${totalDocs || 0}`} />
-        <MiniStat label="FICO" value={client.fico ? String(client.fico) : "New"} />
+        <MiniStat label="Credit" value={creditDisplay.shortLabel} />
       </View>
 
       <View style={{ gap: 8, marginTop: 14 }}>
@@ -498,28 +525,30 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 }
 
 function ActionButton({
-  label, icon, onPress, primary, loading, disabled, wide, compact,
+  label, icon, onPress, primary, loading, disabled, wide, compact, tone,
 }: {
   label: string;
-  icon: "bolt" | "chat" | "check" | "vault";
+  icon: "bolt" | "chat" | "check" | "vault" | "calc" | "sliders";
   onPress: () => void;
   primary?: boolean;
   loading?: boolean;
   disabled?: boolean;
   wide?: boolean;
   compact?: boolean;
+  tone?: "call" | "message";
 }) {
   const { t } = useTheme();
-  const bg = primary ? t.brand : t.surface2;
-  const fg = primary ? "#fff" : t.ink;
-  const borderColor = primary ? t.brand : t.line;
+  const toneBg = tone === "call" ? "#16A34A" : tone === "message" ? "#2563EB" : null;
+  const bg = primary ? t.brand : toneBg ?? t.surface2;
+  const fg = primary || toneBg ? "#fff" : t.ink;
+  const borderColor = primary ? t.brand : toneBg ?? t.line;
   return (
     <Pressable
       onPress={onPress}
       disabled={loading || disabled}
       style={({ pressed }) => ({
         flex: wide ? undefined : 1,
-        minWidth: compact ? 0 : undefined,
+        minWidth: compact ? 96 : undefined,
         paddingVertical: wide ? 13 : 10,
         paddingHorizontal: compact ? 8 : 12,
         borderRadius: wide ? 12 : 10,

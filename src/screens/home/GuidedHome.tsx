@@ -8,9 +8,11 @@ import { NextActionCard } from "@/components/NextActionCard";
 import { LoanSnapshotCard } from "@/components/LoanSnapshotCard";
 import { DocumentRequestList } from "@/components/DocumentRequestList";
 import { AIChatSheet } from "@/components/sheets/AIChatSheet";
+import { SharedAnalysisReports } from "@/components/SharedAnalysisReports";
 import { Icon } from "@/design-system/Icon";
 import {
   useAIChatThreads,
+  useAnalysisRuns,
   useCreditCurrent,
   useCurrentUser,
   useDocuments,
@@ -58,6 +60,7 @@ export function GuidedHome() {
   // chat hero card. Cheap query — the existing AIChatSheet already
   // uses the same hook so this is cached.
   const { data: threads = [] } = useAIChatThreads();
+  const { data: sharedReports = [] } = useAnalysisRuns({ shared: true });
 
   const nextAction = useMemo(
     () => deriveNextAction({ client, credit, loans, documents }),
@@ -116,6 +119,8 @@ export function GuidedHome() {
               : undefined
           }
         />
+
+        <SharedAnalysisReports reports={sharedReports} />
 
         {activeLoans.length > 0 ? (
           <View style={{ gap: 10 }}>

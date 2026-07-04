@@ -1,9 +1,7 @@
 // Broker Clients tab.
 //
-// Phase 7 redesign — the contact-creation flow is the headline action of
-// this tab, not a FAB tucked at the bottom-right. The screen now reads
-// top-to-bottom as: header → "Add a new client" hero CTA → stats chips
-// → search/filter → client list.
+// Phase 7 redesign — the contact-creation flow is prominent, but search
+// leads the tab so agents can get back to a client before creating a new one.
 
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -16,6 +14,7 @@ import { TopBar } from "@/components/TopBar";
 import { StageFilterChips } from "@/components/agent/StageFilterChips";
 import { useClients } from "@/hooks/useApi";
 import { ClientStage, ClientStageOptions } from "@/lib/enums.generated";
+import { creditDisplayFromFico } from "@/lib/creditDisplay";
 
 const STAGE_LABEL: Record<ClientStage, string> = Object.fromEntries(
   ClientStageOptions.map((o) => [o.value, o.label])
@@ -47,74 +46,7 @@ export function ClientsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
       <TopBar title="Clients" />
 
-      {/* Local sub-header pill — discoverable when the user has scrolled past
-          the hero CTA. Lives inside ClientsScreen only; does NOT touch the
-          shared <TopBar> API (which is consumed by other tabs). */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: 16,
-          paddingTop: 4,
-          paddingBottom: 8,
-        }}
-      >
-        <Text style={{ fontSize: 11, fontWeight: "700", color: t.ink3, letterSpacing: 1.4, textTransform: "uppercase" }}>
-          Your book
-        </Text>
-        <Pressable
-          onPress={goNew}
-          accessibilityLabel="Add a new client"
-          style={({ pressed }) => ({
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 5,
-            paddingVertical: 6,
-            paddingHorizontal: 10,
-            borderRadius: 999,
-            backgroundColor: pressed ? t.brand : t.brandSoft,
-          })}
-        >
-          <Icon name="plus" size={12} color={t.brand} />
-          <Text style={{ fontSize: 11.5, fontWeight: "800", color: t.brand, letterSpacing: 0.3 }}>NEW CLIENT</Text>
-        </Pressable>
-      </View>
-
-      <View style={{ paddingHorizontal: 16, gap: 10 }}>
-        {/* Hero CTA — replaces the previous "Client book" summary card. */}
-        <TappableCard onPress={goNew} accessibilityLabel="Add a new client">
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <View
-              style={{
-                width: 46,
-                height: 46,
-                borderRadius: 13,
-                backgroundColor: t.brand,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Icon name="plus" size={22} color="#fff" stroke={2.6} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 17, fontWeight: "800", color: t.ink, letterSpacing: -0.2 }}>
-                Add a new client
-              </Text>
-              <Text style={{ fontSize: 12, color: t.ink3, marginTop: 3, lineHeight: 17 }} numberOfLines={2}>
-                Capture a lead, run the intake, hand off to lending when ready.
-              </Text>
-            </View>
-          </View>
-        </TappableCard>
-
-        {/* Stats demoted to a thin chip row. */}
-        <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-          <Pill bg={t.chip} color={t.ink2}>{clients.length} total</Pill>
-          <Pill bg={t.brandSoft} color={t.brand}>{activeClients} active</Pill>
-          <Pill bg={t.petrolSoft} color={t.petrol}>{leadClients} new leads</Pill>
-        </View>
-
+      <View style={{ paddingHorizontal: 16, paddingTop: 4, gap: 10 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: t.surface2, borderRadius: 10, paddingHorizontal: 12 }}>
           <Icon name="search" size={16} color={t.ink3} />
           <TextInput
@@ -131,6 +63,38 @@ export function ClientsScreen() {
               <Icon name="x" size={14} color={t.ink3} />
             </Pressable>
           ) : null}
+        </View>
+
+        <TappableCard onPress={goNew} accessibilityLabel="Add a new client">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 11 }}>
+            <View
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                backgroundColor: t.brand,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Icon name="plus" size={18} color="#fff" stroke={2.6} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 15, fontWeight: "800", color: t.ink }}>
+                Add a new client
+              </Text>
+              <Text style={{ fontSize: 11.5, color: t.ink3, marginTop: 2, lineHeight: 15 }} numberOfLines={1}>
+                Capture a lead, run the intake, hand off to lending when ready.
+              </Text>
+            </View>
+          </View>
+        </TappableCard>
+
+        {/* Stats demoted to a thin chip row. */}
+        <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+          <Pill bg={t.chip} color={t.ink2}>{clients.length} total</Pill>
+          <Pill bg={t.brandSoft} color={t.brand}>{activeClients} active</Pill>
+          <Pill bg={t.petrolSoft} color={t.petrol}>{leadClients} new leads</Pill>
         </View>
 
         <StageFilterChips
@@ -174,7 +138,7 @@ export function ClientsScreen() {
                 <Text style={{ fontSize: 14, fontWeight: "700", color: t.ink }} numberOfLines={1}>{c.name}</Text>
                 <Text style={{ fontSize: 12, color: t.ink3, marginTop: 2 }} numberOfLines={1}>
                   {c.city ?? c.email ?? "—"}
-                  {c.fico != null ? ` · FICO ${c.fico}` : ""}
+                  {c.fico != null ? ` · ${creditDisplayFromFico(c.fico).shortLabel}` : ""}
                 </Text>
               </View>
               {c.stage ? <Pill bg={t.chip} color={t.ink2}>{STAGE_LABEL[c.stage]}</Pill> : null}

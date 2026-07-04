@@ -38,17 +38,17 @@ export default function AgentTabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="pipeline"
-        options={{
-          title: "Pipeline",
-          tabBarIcon: ({ color, focused }) => <TabIcon name="layers" color={color} focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
         name="clients"
         options={{
           title: "Clients",
           tabBarIcon: ({ color, focused }) => <TabIcon name="user" color={color} focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="pipeline"
+        options={{
+          title: "Pipeline",
+          tabBarIcon: ({ color, focused }) => <TabIcon name="layers" color={color} focused={focused} />,
         }}
       />
       <Tabs.Screen

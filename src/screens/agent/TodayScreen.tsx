@@ -10,7 +10,7 @@ import { NextActionRow } from "@/components/agent/NextActionRow";
 import { AgentLoanCard } from "@/components/agent/AgentLoanCard";
 import { AgentRateGrid } from "@/components/agent/AgentRateGrid";
 import { AIChatSheet } from "@/components/sheets/AIChatSheet";
-import { useAITasks, useClients, useCurrentUser, useLeadFunnel, useLoans, useNextActions } from "@/hooks/useApi";
+import { useAdminPrequalRequests, useAITasks, useClients, useCurrentUser, useLeadFunnel, useLoans, useNextActions } from "@/hooks/useApi";
 import { deriveFunnelFromLoans, deriveNextActionsFromLoans } from "@/lib/agentDerivation";
 import type { Loan, NextAction } from "@/lib/types";
 
@@ -47,6 +47,7 @@ export function TodayScreen() {
   const { data: aiTasks = [] } = useAITasks();
   const { data: funnelFromApi } = useLeadFunnel();
   const { data: nextActionsFromApi } = useNextActions();
+  const { data: prequalRequests = [] } = useAdminPrequalRequests(null);
 
   const funnel = useMemo(
     () => funnelFromApi ?? deriveFunnelFromLoans(loans, clients),
@@ -66,6 +67,8 @@ export function TodayScreen() {
   }).sort((a, b) => daysUntil(a.close_date) - daysUntil(b.close_date));
 
   const callToday = nextActions.filter((a) => a.kind === "call_lead" || a.kind === "chase_doc" || a.kind === "pending_task");
+  const pendingPrequals = prequalRequests.filter((r) => r.status === "pending").length;
+  const approvedPrequals = prequalRequests.filter((r) => r.status === "approved").length;
 
   const clientNameOf = (l: Loan) => clients.find((c) => c.id === l.client_id)?.name;
 
@@ -93,7 +96,7 @@ export function TodayScreen() {
             <KpiTile
               label="New leads (7d)"
               value={funnel.leads_this_week}
-              onPress={() => router.push("/agent/(tabs)/pipeline?mode=leads" as Href)}
+              onPress={() => router.push("/agent/(tabs)/clients" as Href)}
             />
             <KpiTile
               label="Active pipeline"
@@ -111,6 +114,18 @@ export function TodayScreen() {
               value={closingSoon.length}
               accent={closingSoon.length ? "profit" : "neutral"}
               onPress={() => router.push("/agent/(tabs)/pipeline?filter=closing30" as Href)}
+            />
+            <KpiTile
+              label="Pending prequals"
+              value={pendingPrequals}
+              accent={pendingPrequals ? "warn" : "neutral"}
+              onPress={() => router.push("/agent/prequalifications?status=pending" as Href)}
+            />
+            <KpiTile
+              label="Approved prequals"
+              value={approvedPrequals}
+              accent={approvedPrequals ? "profit" : "neutral"}
+              onPress={() => router.push("/agent/prequalifications?status=approved" as Href)}
             />
           </View>
         </View>

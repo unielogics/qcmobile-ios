@@ -1,4 +1,4 @@
-// AI Secretary — broker mobile view.
+// Elara — broker mobile view.
 //
 // Single-column swipe-to-assign list. Top section shows the AI start/pause
 // controls + a chip for any open AI questions (the legacy Q&A surface
@@ -70,12 +70,12 @@ export function AISecretaryTab({ loanId }: { loanId: string }) {
     <View style={{ gap: 12 }}>
       <Card pad={14}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <SectionLabel>AI Secretary</SectionLabel>
+          <SectionLabel>Elara</SectionLabel>
           <View style={{ flexDirection: "row", gap: 6 }}>
             <Pressable
               onPress={() => start.mutate(loanId)}
               disabled={start.isPending}
-              accessibilityLabel="Start AI Secretary"
+              accessibilityLabel="Start Elara"
               style={({ pressed }) => ({
                 paddingVertical: 6,
                 paddingHorizontal: 10,
@@ -92,7 +92,7 @@ export function AISecretaryTab({ loanId }: { loanId: string }) {
             <Pressable
               onPress={() => pause.mutate(loanId)}
               disabled={pause.isPending}
-              accessibilityLabel="Pause AI Secretary"
+              accessibilityLabel="Pause Elara"
               style={({ pressed }) => ({
                 paddingVertical: 6,
                 paddingHorizontal: 10,

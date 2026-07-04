@@ -259,6 +259,101 @@ export interface CreditSummary {
   note?: string;
 }
 
+export interface BillingAddress {
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  line1: string;
+  line2?: string | null;
+  city: string;
+  state: string;
+  postal_code: string;
+  country: string;
+}
+
+export interface ClientPaymentMethodRead {
+  id: string;
+  stripe_customer_id: string;
+  stripe_payment_method_id: string;
+  setup_intent_id: string | null;
+  status: string;
+  brand: string | null;
+  last4: string | null;
+  exp_month: number | null;
+  exp_year: number | null;
+  billing_name: string | null;
+  billing_email: string | null;
+  billing_line1: string | null;
+  billing_line2: string | null;
+  billing_city: string | null;
+  billing_state: string | null;
+  billing_postal_code: string | null;
+  billing_country: string | null;
+  verification_status: string | null;
+  created_at: string;
+}
+
+export interface PaymentAuthorizationRead {
+  id: string;
+  status: string;
+  document_version: string;
+  document_hash: string;
+  typed_name: string | null;
+  stripe_customer_id: string | null;
+  stripe_payment_method_id: string | null;
+  setup_intent_id: string | null;
+  setup_intent_status: string | null;
+  certificate_s3_key: string | null;
+  signed_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface PaymentAuthorizationDocumentRead {
+  version: string;
+  sha256: string;
+  text: string;
+}
+
+export interface PaymentAuthorizationStatusRead {
+  role: string;
+  requires_authorization: boolean;
+  authorized: boolean;
+  client_id: string | null;
+  latest_authorization: PaymentAuthorizationRead | null;
+  payment_method: ClientPaymentMethodRead | null;
+  certificate_url?: string | null;
+  stripe_publishable_key?: string | null;
+}
+
+export interface PaymentAuthorizationStartResponse {
+  authorization: PaymentAuthorizationRead;
+  document: PaymentAuthorizationDocumentRead;
+}
+
+export interface SetupIntentResponse {
+  authorization_id: string;
+  setup_intent_id: string;
+  client_secret: string;
+  stripe_customer_id: string;
+  stripe_publishable_key: string;
+}
+
+export interface PaymentAuthorizationCompleteResponse {
+  authorization: PaymentAuthorizationRead;
+  payment_method: ClientPaymentMethodRead;
+  certificate_url?: string | null;
+}
+
+export interface CreditPullAccessRead {
+  role: string;
+  requires_payment_authorization: boolean;
+  payment_authorized: boolean;
+  can_run_credit: boolean;
+  reason_code?: string | null;
+  message?: string | null;
+}
+
 export interface Activity {
   id: string;
   loan_id: string | null;
@@ -512,6 +607,17 @@ export interface CalendarEvent {
   external_ref_id: string | null;
 }
 
+export interface CalendarActivityItem {
+  id: string;
+  loan_id: string | null;
+  client_id: string | null;
+  kind: string;
+  summary: string;
+  actor_label: string | null;
+  occurred_at: string;
+  payload: Record<string, unknown> | null;
+}
+
 // Reports/dashboard
 export interface StageBreakdown {
   stage: LoanStage;
@@ -584,6 +690,8 @@ export interface PrequalRequest {
   id: string;
   loan_id: string | null;
   requester_id: string;
+  client_id?: string | null;
+  client_name?: string | null;
   target_property_address: string;
   // For F&F: purchase_price is the BRV. For DSCR / Bridge it's the
   // property purchase / value.
@@ -614,6 +722,7 @@ export interface PrequalRequest {
   reviewed_at: string | null;
   created_at: string;
   updated_at: string;
+  source_analysis_run_id?: string | null;
 }
 
 export interface PrequalRequestCreate {
@@ -629,8 +738,148 @@ export interface PrequalRequestCreate {
   sow_items?: PrequalSowLineItem[] | null;
 }
 
+export interface AdminPrequalCreate extends PrequalRequestCreate {
+  client_id: string;
+  manual_credit_override?: {
+    fico: number;
+    property_count: number;
+    has_year_of_ownership: boolean;
+  } | null;
+}
+
 export interface PrequalSellerOutcome {
   note?: string | null;
+}
+
+// ── Analysis runs + property intelligence ─────────────────────────────
+// Mirrors qcdesktop/src/lib/types.ts and backend app/schemas/analysis.py.
+
+export type AnalysisProduct = "dscr_purchase" | "dscr_refi" | "fix_flip";
+export type AnalysisSource = "deal_analyzer" | "simulator" | "loan_recalc";
+
+export interface AddressParts {
+  street?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  full?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export interface AddressSuggestion {
+  place_id: string;
+  text: string;
+  secondary_text: string | null;
+}
+
+export interface AddressResolveResponse {
+  address: AddressParts;
+  google_place: Record<string, unknown> | null;
+}
+
+export interface PropertyIntelligenceSnapshot {
+  id: string;
+  created_by_id: string | null;
+  client_id: string | null;
+  deal_id: string | null;
+  loan_id: string | null;
+  normalized_address: string;
+  address_hash: string;
+  source_status: Record<string, unknown> | null;
+  address: AddressParts & Record<string, unknown>;
+  google_place: Record<string, unknown> | null;
+  rentcast_property: Record<string, unknown> | null;
+  rentcast_value: Record<string, unknown> | null;
+  rentcast_rent: Record<string, unknown> | null;
+  rentcast_market: Record<string, unknown> | null;
+  fema_flood: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PropertyIntelligenceLookupRequest {
+  address: AddressParts;
+  client_id?: string | null;
+  deal_id?: string | null;
+  loan_id?: string | null;
+  property_type?: string | null;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  square_footage?: number | null;
+  force_refresh?: boolean;
+}
+
+export interface AnalysisRun {
+  id: string;
+  created_by_id: string | null;
+  client_id: string | null;
+  deal_id: string | null;
+  loan_id: string | null;
+  property_snapshot_id: string | null;
+  prequal_request_id: string | null;
+  product: AnalysisProduct;
+  tool_source: AnalysisSource;
+  status: string;
+  title: string;
+  target_property_address: string | null;
+  inputs: Record<string, unknown>;
+  calculator_output: Record<string, unknown> | null;
+  ai_report: Record<string, unknown> | null;
+  sanitized_client_report: Record<string, unknown> | null;
+  report_version: number;
+  shared_at: string | null;
+  shared_by_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type AnalysisRunToolSourceFilter = AnalysisSource | "deal_analyzer" | "simulator" | "loan_recalc";
+
+export interface AnalysisRunCreate {
+  product: AnalysisProduct;
+  tool_source?: AnalysisSource;
+  title?: string | null;
+  client_id?: string | null;
+  deal_id?: string | null;
+  loan_id?: string | null;
+  property_snapshot_id?: string | null;
+  target_property_address?: string | null;
+  inputs?: Record<string, unknown>;
+  calculator_output?: Record<string, unknown> | null;
+}
+
+export interface AnalysisRunUpdate {
+  title?: string | null;
+  client_id?: string | null;
+  deal_id?: string | null;
+  loan_id?: string | null;
+  property_snapshot_id?: string | null;
+  target_property_address?: string | null;
+  inputs?: Record<string, unknown> | null;
+  calculator_output?: Record<string, unknown> | null;
+  status?: string | null;
+}
+
+export interface AnalysisRunPrequalRequest {
+  expected_closing_date?: string | null;
+  borrower_entity?: string | null;
+  notes?: string | null;
+  manual_credit_override?: {
+    fico: number;
+    property_count: number;
+    has_year_of_ownership: boolean;
+  } | null;
+}
+
+export interface AnalysisRunPrequalResponse {
+  analysis_run: AnalysisRun;
+  prequal_request: PrequalRequest;
+}
+
+export interface ShareAnalysisResponse {
+  analysis_run: AnalysisRun;
+  shared: boolean;
 }
 
 // FRED-driven market rates (mirrors qcdesktop)
@@ -721,6 +970,31 @@ export interface BrokerSettings {
   default_seller_doc_set: string | null;
   notify_on_new_lead: boolean;
   notify_on_stuck_deal: boolean;
+}
+
+export interface AgentBookingSettings {
+  enabled: boolean;
+  slug: string | null;
+  title: string | null;
+  intro: string | null;
+  primary_color: string;
+  background_color: string;
+  duration_min: number;
+  timezone: string;
+  available_days: number[];
+  start_time: string;
+  end_time: string;
+}
+
+export interface AgentSettingsData {
+  checklists?: Record<string, unknown>;
+  cadence?: Record<string, unknown> | null;
+  letterhead?: Record<string, unknown> | null;
+  booking: AgentBookingSettings | null;
+}
+
+export interface AgentSettingsRead {
+  data: AgentSettingsData;
 }
 
 // Mirrors qcdesktop's EngagementSignal — backed by GET /clients/{id}/engagement.

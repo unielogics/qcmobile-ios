@@ -8,8 +8,8 @@
 //   - HUD        : HUD lines viewer / editor
 //   - Pre-Qual   : prequal request list + new request entry
 //   - Messages   : SAME loan-chat the client sees, with the 4-mode
-//                  composer (Live Chat / Ask AI / Suggest / Instruct)
-//   - AI         : AI Secretary questions + tasks
+//                  composer (Live Chat / Ask Elara / Suggest / Instruct)
+//   - AI         : Elara questions + tasks
 //   - Lender     : lender thread + connect/disconnect
 //   - Activity   : audit feed
 

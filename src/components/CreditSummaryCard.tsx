@@ -1,53 +1,36 @@
 // Mobile credit summary card. Mirrors qcdesktop/src/components/CreditSummaryCard.tsx —
-// FICO + tier + bullet list + the products the borrower currently qualifies for.
+// tier + bullet list + the products the borrower currently qualifies for.
 //
 // Mounted on the simulator screen so the borrower sees their headline credit
 // state alongside the rate they're modeling.
 
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useTheme } from "@/design-system/ThemeProvider";
 import { Card, Pill } from "@/design-system/primitives";
+import { creditDisplayFromSummary, type CreditDisplayTone } from "@/lib/creditDisplay";
 import type { CreditSummary } from "@/lib/types";
-
-const TIER_LABEL: Record<string, string> = {
-  pro: "Pro",
-  basic: "Standard",
-  warn: "Caution",
-  blocked: "Blocked",
-};
 
 export function CreditSummaryCard({ summary }: { summary: CreditSummary | undefined }) {
   const { t } = useTheme();
-  if (!summary || summary.fico == null) return null;
+  if (!summary) return null;
 
-  const tier = summary.tier ?? "blocked";
-  const tierFg = tier === "pro" ? t.profit : tier === "basic" ? t.brand : tier === "warn" ? t.warn : t.danger;
-  const tierBg = tier === "pro" ? t.profitBg : tier === "basic" ? t.brandSoft : tier === "warn" ? t.warnBg : t.dangerBg;
+  const display = creditDisplayFromSummary(summary);
+  const colors = creditToneColors(display.tone, t);
   const maxLtv = summary.tier_max_ltv != null ? `${Math.round(summary.tier_max_ltv * 100)}%` : "—";
 
   return (
     <Card pad={14} style={{ marginBottom: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 14 }}>
-        <View style={{ minWidth: 100 }}>
+        <View style={{ minWidth: 118 }}>
           <Text style={{ fontSize: 10, fontWeight: "700", color: t.ink3, letterSpacing: 1.2, textTransform: "uppercase" }}>
-            Credit
+            Credit Verified
           </Text>
-          <Text
-            style={{
-              fontSize: 38, fontWeight: "800", color: t.ink, lineHeight: 42,
-              fontVariant: ["tabular-nums"], marginTop: 2,
-            }}
-          >
-            {summary.fico}
-          </Text>
-          <Text style={{ fontSize: 10, color: t.ink3, marginTop: 2 }}>
-            {summary.fico_model
-              ? summary.fico_model.toUpperCase().replace("_", " ")
-              : "FICO"}
-          </Text>
+          <View style={{ marginTop: 6, alignSelf: "flex-start", borderRadius: 999, backgroundColor: colors.bg, paddingHorizontal: 10, paddingVertical: 6 }}>
+            <Text style={{ fontSize: 13, fontWeight: "800", color: colors.fg }}>{display.label}</Text>
+          </View>
         </View>
         <View style={{ flex: 1, gap: 6 }}>
-          <Pill bg={tierBg} color={tierFg}>{TIER_LABEL[tier] ?? tier}</Pill>
+          <Pill bg={colors.bg} color={colors.fg}>{display.shortLabel}</Pill>
           <Text style={{ fontSize: 12, color: t.ink2 }}>
             Up to <Text style={{ fontWeight: "700", color: t.ink }}>{maxLtv}</Text> LTV available
           </Text>
@@ -114,4 +97,11 @@ export function CreditSummaryCard({ summary }: { summary: CreditSummary | undefi
       ) : null}
     </Card>
   );
+}
+
+function creditToneColors(tone: CreditDisplayTone, t: ReturnType<typeof useTheme>["t"]) {
+  if (tone === "success") return { bg: t.profitBg, fg: t.profit };
+  if (tone === "warning") return { bg: t.warnBg, fg: t.warn };
+  if (tone === "danger") return { bg: t.dangerBg, fg: t.danger };
+  return { bg: t.chip, fg: t.ink3 };
 }

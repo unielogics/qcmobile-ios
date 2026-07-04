@@ -4,23 +4,36 @@
 // carry is system-generated — neither is a borrower input. Shares the
 // pure engine in src/lib/fixFlip with web.
 
-import { useMemo, useState, type ReactNode } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, usePathname, useRouter, type Href } from "expo-router";
 import { useTheme } from "@/design-system/ThemeProvider";
 import { Card, Pill, SectionLabel } from "@/design-system/primitives";
 import { Icon } from "@/design-system/Icon";
 import { KeyboardAware } from "@/components/KeyboardAware";
+import { ClientSearchPicker } from "@/components/agent/ClientSearchPicker";
+import { AnalysisRunFabMenu, AnalysisRunsList } from "@/components/agent/AnalysisRunsList";
+import { GoogleAddressInput, formatAddressParts, isAddressLookupReady } from "@/components/property/GoogleAddressInput";
 import {
+  useAnalysisRuns,
   useMyClient,
-  useCreditCurrent,
+  useCurrentCredit,
+  useClients,
+  useClient,
+  useCurrentUser,
+  useConvertAnalysisRunToPrequal,
+  useCreateAnalysisRun,
+  usePropertyIntelligenceLookup,
   useSaveFixFlipScenario,
+  useShareAnalysisRun,
+  useUpdateAnalysisRun,
   useUpdateFixFlipScenario,
   useClosingCostTiers,
 } from "@/hooks/useApi";
+import { creditDisplayFromFico, creditDisplayOverrideLabel } from "@/lib/creditDisplay";
 import { analyzeFixFlip } from "@/lib/fixFlip/calc";
-import { US_STATES } from "@/lib/usStates";
+import type { AddressParts } from "@/lib/types";
 import type { ExperienceTier, FixFlipInputs } from "@/lib/fixFlip/types";
 
 const DISCLAIMER =
@@ -46,6 +59,16 @@ function deriveExperienceTier(raw?: string | null): ExperienceTier {
   return "1_2_flips";
 }
 
+function readProviderNumber(payload: Record<string, unknown> | null | undefined, keys: string[]) {
+  if (!payload) return null;
+  for (const key of keys) {
+    const value = payload[key];
+    const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
 const STEPS = ["Property", "Deal Numbers", "Timeline & Cash", "Review", "Results"] as const;
 type Step = (typeof STEPS)[number];
 
@@ -67,29 +90,75 @@ type T = ReturnType<typeof useTheme>["t"];
 export function DealAnalyzerScreen() {
   const { t } = useTheme();
   const router = useRouter();
-  const { data: client } = useMyClient();
-  const { data: credit } = useCreditCurrent();
+  const params = useLocalSearchParams<{ clientId?: string; new?: string; type?: string }>();
+  const pathname = usePathname();
+  const paramClientId = typeof params.clientId === "string" ? params.clientId : null;
+  const wantsNew = params.new === "1";
+  const { data: me } = useCurrentUser();
+  const isAgentRoute = pathname.startsWith("/agent/");
+  const canLinkClient =
+    isAgentRoute ||
+    me?.role === "broker" ||
+    me?.role === "super_admin" ||
+    me?.role === "loan_exec";
+  const { data: myClient } = useMyClient();
+  const { data: clients = [] } = useClients("mine", { enabled: canLinkClient });
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(paramClientId);
+  const { data: selectedClient } = useClient(canLinkClient ? selectedClientId : null);
+  const profileClientId = canLinkClient ? selectedClientId : myClient?.id ?? null;
+  const profileClient = canLinkClient ? selectedClient : myClient;
+  const { data: credit } = useCurrentCredit(profileClientId);
   const { data: closingTiers } = useClosingCostTiers();
   const save = useSaveFixFlipScenario();
   const update = useUpdateFixFlipScenario();
+  const createAnalysis = useCreateAnalysisRun();
+  const updateAnalysis = useUpdateAnalysisRun();
+  const shareAnalysis = useShareAnalysisRun();
+  const convertAnalysis = useConvertAnalysisRunToPrequal();
+  const propertyLookup = usePropertyIntelligenceLookup();
+  const recentSince = useMemo(() => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), []);
+  const { data: recentRuns = [], isLoading: recentRunsLoading } = useAnalysisRuns({
+    tool_source: "deal_analyzer",
+    updated_since: recentSince,
+    limit: 50,
+  });
 
   const [i, setI] = useState<FixFlipInputs>(DEFAULTS);
   const [stepIdx, setStepIdx] = useState(0);
   const [flash, setFlash] = useState<string | null>(null);
-  const [stateOpen, setStateOpen] = useState(false);
+  const [prequalFlash, setPrequalFlash] = useState<string | null>(null);
+  const [propertySnapshotId, setPropertySnapshotId] = useState<string | null>(null);
+  const [propertyFlash, setPropertyFlash] = useState<string | null>(null);
+  const [overrideFicoText, setOverrideFicoText] = useState("");
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [analysisRunId, setAnalysisRunId] = useState<string | null>(null);
+  const lastPropertyLookupKey = useRef<string | null>(null);
   // Which construction coverage the Results view reflects. The whole
   // output (summary, visuals, HUD, programs) follows this toggle.
   const [coverage, setCoverage] = useState<"financed" | "self">("financed");
   const step: Step = STEPS[stepIdx];
 
+  useEffect(() => {
+    if (paramClientId) setSelectedClientId(paramClientId);
+  }, [paramClientId]);
+
+  useEffect(() => {
+    setOverrideFicoText("");
+    setAnalysisRunId(null);
+  }, [selectedClientId]);
+
   const derivedCredit =
-    (credit as { fico?: number } | null)?.fico ?? client?.fico ?? undefined;
-  const derivedExperience = deriveExperienceTier(client?.experience);
+    (credit as { fico?: number } | null)?.fico ?? profileClient?.fico ?? undefined;
+  const overrideFico = (() => {
+    const n = Number(overrideFicoText.replace(/[^0-9]/g, ""));
+    return Number.isFinite(n) && n >= 300 && n <= 850 ? n : undefined;
+  })();
+  const effectiveCredit = derivedCredit ?? (canLinkClient ? overrideFico : undefined);
+  const derivedExperience = deriveExperienceTier(profileClient?.experience);
 
   const inputs = useMemo<FixFlipInputs>(
-    () => ({ ...i, creditScore: derivedCredit, experience: derivedExperience }),
-    [i, derivedCredit, derivedExperience],
+    () => ({ ...i, creditScore: effectiveCredit, experience: derivedExperience }),
+    [i, effectiveCredit, derivedExperience],
   );
   const resultFinanced = useMemo(
     () => analyzeFixFlip(inputs, { closingTiers }),
@@ -105,9 +174,19 @@ export function DealAnalyzerScreen() {
 
   const set = <K extends keyof FixFlipInputs>(k: K, v: FixFlipInputs[K]) =>
     setI((p) => ({ ...p, [k]: v }));
-  const setAddr = (k: "street" | "city" | "state" | "zip", v: string) =>
-    setI((p) => ({ ...p, address: { ...p.address, [k]: v } }));
   const num = (s: string) => Number(s.replace(/[^0-9.]/g, "")) || 0;
+
+  const propertyLookupKey = useMemo(() => {
+    const parts = inputs.address as AddressParts;
+    if (!isAddressLookupReady(parts)) return "";
+    return [
+      selectedClientId ?? "",
+      inputs.propertyType,
+      formatAddressParts(parts),
+      parts.latitude ?? "",
+      parts.longitude ?? "",
+    ].join("|");
+  }, [inputs.address, inputs.propertyType, selectedClientId]);
 
   const stepValid = (s: Step): boolean => {
     if (s === "Property") return !!(inputs.address.street && inputs.address.city && inputs.address.state && inputs.address.zip);
@@ -155,7 +234,7 @@ export function DealAnalyzerScreen() {
         await update.mutateAsync({ id: savedId, ...body });
       } else {
         const row = await save.mutateAsync({
-          client_id: client?.id ?? undefined,
+          client_id: profileClientId ?? undefined,
           ...body,
         });
         setSavedId(row.id);
@@ -167,9 +246,195 @@ export function DealAnalyzerScreen() {
     setTimeout(() => setFlash(null), 2500);
   };
 
+  const propertyAddress = () =>
+    formatAddressParts(inputs.address as AddressParts, "Property TBD") || "Property TBD";
+
+  const notesForRun = () =>
+    [
+      "Created from mobile Fix & Flip Deal Analyzer.",
+      `Construction scenario: ${coverage === "financed" ? "construction financed" : "borrower-funded construction"}.`,
+      `Deal grade: ${result.dealGrade}; score ${result.dealScore}/100.`,
+      `Estimated cash to close: ${money(result.estimatedCashToClose)}.`,
+      `Projected net profit: ${money(result.projectedNetProfit)}.`,
+    ].join(" ");
+
+  const ensureAnalysisRun = async () => {
+    const address = propertyAddress();
+    const notes = notesForRun();
+    const constructionTotal = Math.round(inputs.rehabCost + result.rehabContingencyAmount);
+    const payload = {
+      product: "fix_flip" as const,
+      tool_source: "deal_analyzer" as const,
+      title: `Fix & Flip - ${address}`,
+      client_id: selectedClientId ?? null,
+      property_snapshot_id: propertySnapshotId,
+      target_property_address: address,
+      inputs: {
+        ...inputs,
+        address,
+        purchase_price: inputs.purchasePrice,
+        brv: inputs.purchasePrice,
+        arv: inputs.arv,
+        rehab_cost: inputs.rehabCost,
+        requested_loan_amount: Math.max(1, Math.round(result.loanAmount)),
+        loan_amount: Math.max(1, Math.round(result.loanAmount)),
+        fico: effectiveCredit,
+        notes,
+        construction_coverage: coverage,
+        sow_items: [
+          {
+            category: "Rehab / construction",
+            description: `Analyzer ${coverage === "financed" ? "financed" : "self-funded"} construction budget, including contingency.`,
+            total_usd: constructionTotal,
+          },
+        ],
+      } as unknown as Record<string, unknown>,
+      calculator_output: result as unknown as Record<string, unknown>,
+    };
+    const row = analysisRunId
+      ? await updateAnalysis.mutateAsync({ id: analysisRunId, patch: payload })
+      : await createAnalysis.mutateAsync(payload);
+    setAnalysisRunId(row.id);
+    return row;
+  };
+
+  const lookupProperty = useCallback(async (parts: AddressParts) => {
+    setPropertyFlash(null);
+    if (!isAddressLookupReady(parts)) return;
+    try {
+      const snapshot = await propertyLookup.mutateAsync({
+        address: parts,
+        client_id: selectedClientId ?? null,
+        property_type: inputs.propertyType,
+      });
+      setPropertySnapshotId(snapshot.id);
+      const rentEstimate = readProviderNumber(snapshot.rentcast_rent, ["rent", "rentEstimate", "estimatedRent"]);
+      const valueEstimate = readProviderNumber(snapshot.rentcast_value, ["value", "price", "estimate", "estimatedValue"]);
+      if (valueEstimate != null && valueEstimate > 0 && inputs.arv <= 0) {
+        set("arv", Math.round(valueEstimate));
+      }
+      setPropertyFlash(rentEstimate ? `Property intelligence attached. Rent estimate ${money(rentEstimate)}.` : "Property intelligence attached.");
+    } catch (e) {
+      setPropertyFlash(e instanceof Error ? e.message : "Could not pull property intelligence.");
+    }
+  }, [inputs.arv, inputs.propertyType, propertyLookup, selectedClientId]);
+
+  useEffect(() => {
+    const parts = inputs.address as AddressParts;
+    if (!propertyLookupKey || !isAddressLookupReady(parts)) return;
+    if (lastPropertyLookupKey.current === propertyLookupKey) return;
+    const id = setTimeout(() => {
+      lastPropertyLookupKey.current = propertyLookupKey;
+      void lookupProperty(parts);
+    }, 600);
+    return () => clearTimeout(id);
+  }, [inputs.address, lookupProperty, propertyLookupKey]);
+
+  const shareToClient = async () => {
+    setPrequalFlash(null);
+    if (!selectedClientId) {
+      setPrequalFlash("Link one of your clients before sharing this analysis.");
+      return;
+    }
+    if (result.validationErrors.length) {
+      setPrequalFlash("Resolve the analyzer errors before sharing.");
+      return;
+    }
+    try {
+      const row = await ensureAnalysisRun();
+      const shared = await shareAnalysis.mutateAsync(row.id);
+      setAnalysisRunId(shared.analysis_run.id);
+      setPrequalFlash("Analysis shared to the client portal.");
+    } catch (e) {
+      setPrequalFlash(e instanceof Error ? e.message : "Could not share analysis.");
+    }
+  };
+
+  const createPrequalification = async () => {
+    setPrequalFlash(null);
+    if (!selectedClientId) {
+      setPrequalFlash("Link one of your clients before creating a prequalification.");
+      return;
+    }
+    if (effectiveCredit == null) {
+      setPrequalFlash("Add borrower credit verification or an analyzer override before creating a prequalification.");
+      return;
+    }
+    if (result.validationErrors.length) {
+      setPrequalFlash("Resolve the analyzer errors before creating a prequalification.");
+      return;
+    }
+
+    try {
+      const run = await ensureAnalysisRun();
+      const converted = await convertAnalysis.mutateAsync({
+        runId: run.id,
+        payload: {
+          notes: notesForRun(),
+          manual_credit_override: {
+            fico: effectiveCredit,
+            property_count: 0,
+            has_year_of_ownership: false,
+          },
+        },
+      });
+      setAnalysisRunId(converted.analysis_run.id);
+      setPrequalFlash("Pending prequalification created for funding review.");
+      Alert.alert("Prequalification created", "Funding review can now pick this up from the prequalification queue.");
+      if (savedId) {
+        try {
+          await update.mutateAsync({ id: savedId, status: "converted_to_prequal" });
+        } catch {
+          // Scenario status is secondary; the pending prequalification already exists.
+        }
+      }
+    } catch (e) {
+      setPrequalFlash(e instanceof Error ? e.message : "Could not create prequalification.");
+    }
+  };
+
+  const openNewAnalyzer = () => {
+    const qs = new URLSearchParams();
+    qs.set("new", "1");
+    qs.set("type", "fix_flip");
+    if (paramClientId) qs.set("clientId", paramClientId);
+    router.push(`${pathname}?${qs.toString()}` as Href);
+  };
+
   const gradeC = (g: string) =>
     g === "Excellent" || g === "Good" ? t.brand : g === "Fair" || g === "Thin" ? t.warn : t.danger;
-  const selectedState = US_STATES.find((s) => s.code === inputs.address.state);
+
+  if (canLinkClient && !wantsNew) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomColor: t.line, borderBottomWidth: 1 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: 16, fontWeight: "900", color: t.ink }}>Deal Analyzer</Text>
+            <Text style={{ fontSize: 11.5, color: t.ink3, marginTop: 1 }}>Previous runs - last 30 days</Text>
+          </View>
+          <Pressable onPress={() => router.back()} hitSlop={8} accessibilityLabel="Close">
+            <Icon name="x" size={18} color={t.ink} />
+          </Pressable>
+        </View>
+        <AnalysisRunsList
+          runs={recentRuns}
+          clients={clients}
+          loading={recentRunsLoading}
+          emptyText="No saved Deal Analyzer runs in the last 30 days."
+        />
+        <AnalysisRunFabMenu
+          actions={[
+            {
+              label: "Fix & Flip analyzer",
+              description: "Start a new renovation analysis.",
+              icon: "hammer",
+              onPress: openNewAnalyzer,
+            },
+          ]}
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
@@ -196,39 +461,86 @@ export function DealAnalyzerScreen() {
         <ScrollView contentContainerStyle={{ padding: 14, gap: 12, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           {flash ? <Text style={{ fontSize: 12.5, color: flash.includes("Couldn") ? t.danger : t.brand, fontWeight: "600" }}>{flash}</Text> : null}
 
+          {canLinkClient ? (
+            <Card pad={14}>
+              <SectionLabel>Borrower link</SectionLabel>
+              <ClientSearchPicker
+                clients={clients}
+                value={selectedClientId}
+                onChange={setSelectedClientId}
+                allowUnlinked
+                placeholder="Search owned clients by name, email, or phone"
+              />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                <Text style={{ fontSize: 12, color: t.ink3 }}>Credit</Text>
+                {derivedCredit != null ? (
+                  <Pill bg={t.brandSoft} color={t.brand}>{creditDisplayFromFico(derivedCredit).shortLabel}</Pill>
+                ) : overrideFico != null ? (
+                  <Pill bg={t.warnBg} color={t.warn}>{creditDisplayOverrideLabel(true)}</Pill>
+                ) : (
+                  <Pill bg={t.chip} color={t.ink3}>Not on file</Pill>
+                )}
+                <Text style={{ fontSize: 12, color: t.ink3 }}>Experience</Text>
+                <Pill bg={t.chip} color={t.ink2}>{EXP_LABEL[derivedExperience]}</Pill>
+              </View>
+              {derivedCredit == null ? (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: t.ink3, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                    Analyzer credit override
+                  </Text>
+                  <TextInput
+                    value={overrideFicoText}
+                    onChangeText={setOverrideFicoText}
+                    placeholder="720"
+                    placeholderTextColor={t.ink4}
+                    keyboardType="number-pad"
+                    style={{ marginTop: 4, borderWidth: 1, borderColor: t.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, color: t.ink, fontSize: 14, backgroundColor: t.surface2 }}
+                  />
+                  <Text style={{ fontSize: 11.5, color: t.ink3, marginTop: 6 }}>
+                    Override is used only for this analysis and pending prequalification request.
+                  </Text>
+                </View>
+              ) : null}
+            </Card>
+          ) : null}
+
           {step === "Property" ? (
             <Card pad={14}>
               <SectionLabel>Property</SectionLabel>
-              {fld("Street", inputs.address.street, (s) => setAddr("street", s))}
-              {fld("City", inputs.address.city, (s) => setAddr("city", s))}
-              <View style={{ marginBottom: 10 }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: t.ink3, textTransform: "uppercase", letterSpacing: 0.6 }}>State</Text>
-                <Pressable
-                  onPress={() => setStateOpen((o) => !o)}
-                  style={{ marginTop: 4, borderWidth: 1, borderColor: t.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: t.surface2, flexDirection: "row", alignItems: "center" }}
-                >
-                  <Text style={{ flex: 1, fontSize: 14, color: selectedState ? t.ink : t.ink4 }}>
-                    {selectedState ? `${selectedState.code} — ${selectedState.name}` : "Select a state…"}
-                  </Text>
-                  <Icon name={stateOpen ? "chevU" : "chevD"} size={14} color={t.ink3} />
-                </Pressable>
-                {stateOpen ? (
-                  <View style={{ marginTop: 4, borderWidth: 1, borderColor: t.line, borderRadius: 10, maxHeight: 220, overflow: "hidden" }}>
-                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                      {US_STATES.map((s) => (
-                        <Pressable
-                          key={s.code}
-                          onPress={() => { setAddr("state", s.code); setStateOpen(false); }}
-                          style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomColor: t.line, borderBottomWidth: 1, backgroundColor: s.code === inputs.address.state ? t.brandSoft : t.surface }}
-                        >
-                          <Text style={{ fontSize: 13.5, color: t.ink }}>{s.code} — {s.name}</Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
-                ) : null}
+              <GoogleAddressInput
+                value={inputs.address as AddressParts}
+                onChange={(next) => {
+                  setI((p) => ({
+                    ...p,
+                    address: {
+                      ...p.address,
+                      street: next.street ?? "",
+                      city: next.city ?? "",
+                      state: next.state ?? "",
+                      zip: next.zip ?? "",
+                    },
+                  }));
+                  setPropertySnapshotId(null);
+                  setPropertyFlash(null);
+                }}
+                helperText="RentCast, Google, and FEMA checks run automatically after a complete address is selected or entered."
+              />
+              <View style={{ marginTop: 10 }}>
+                {propertyLookup.isPending ? (
+                  <Pill bg={t.brandSoft} color={t.brand}>Checking RentCast / FEMA</Pill>
+                ) : propertySnapshotId ? (
+                  <Pill bg={t.profitBg} color={t.profit}>Property intelligence attached</Pill>
+                ) : isAddressLookupReady(inputs.address as AddressParts) ? (
+                  <Pill bg={t.chip} color={t.ink3}>Property intelligence queued</Pill>
+                ) : (
+                  <Pill bg={t.chip} color={t.ink3}>Waiting for complete address</Pill>
+                )}
               </View>
-              {fld("ZIP", inputs.address.zip, (s) => setAddr("zip", s))}
+              {propertyFlash ? (
+                <Text style={{ fontSize: 12, fontWeight: "700", color: /attached/i.test(propertyFlash) ? t.brand : t.danger, marginTop: 8 }}>
+                  {propertyFlash}
+                </Text>
+              ) : null}
             </Card>
           ) : null}
 
@@ -282,15 +594,17 @@ export function DealAnalyzerScreen() {
             <Card pad={14}>
               <SectionLabel>Borrower profile</SectionLabel>
               <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                <Text style={{ fontSize: 12, color: t.ink3 }}>Credit score</Text>
-                {derivedCredit != null
-                  ? <Pill bg={t.brandSoft} color={t.brand}>{String(derivedCredit)}</Pill>
+                <Text style={{ fontSize: 12, color: t.ink3 }}>Credit profile</Text>
+                {effectiveCredit != null
+                  ? <Pill bg={derivedCredit != null ? t.brandSoft : t.warnBg} color={derivedCredit != null ? t.brand : t.warn}>{derivedCredit != null ? creditDisplayFromFico(derivedCredit).shortLabel : creditDisplayOverrideLabel(true)}</Pill>
                   : <Pill bg={t.chip} color={t.ink3}>Not on file</Pill>}
                 <Text style={{ fontSize: 12, color: t.ink3, marginLeft: 8 }}>Experience</Text>
                 <Pill bg={t.chip} color={t.ink2}>{EXP_LABEL[derivedExperience]}</Pill>
               </View>
               <Text style={{ fontSize: 11.5, color: t.ink3, marginBottom: 12 }}>
-                Credit &amp; experience come from your profile, not entered here.
+                {canLinkClient
+                  ? "Credit and experience come from the linked borrower profile. Broker override applies only to this analysis."
+                  : "Credit & experience come from your profile, not entered here."}
               </Text>
               <SectionLabel>Recap</SectionLabel>
               <Text style={{ fontSize: 13, color: t.ink2, lineHeight: 20 }}>
@@ -378,6 +692,61 @@ export function DealAnalyzerScreen() {
                     {coverage === "financed" ? "Construction financed" : "You fund construction"}
                   </Text>. Everything below reflects this case.
                 </Text>
+
+                {canLinkClient ? (
+                  <Card pad={14}>
+                    <SectionLabel>Prequalification handoff</SectionLabel>
+                    <Text style={{ fontSize: 12.5, color: t.ink3, lineHeight: 18 }}>
+                      Save this analysis, share a sanitized report to the linked client, or create a pending funding-review request.
+                    </Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+                      <Pressable
+                        onPress={shareToClient}
+                        disabled={shareAnalysis.isPending || createAnalysis.isPending || updateAnalysis.isPending}
+                        style={{
+                          paddingVertical: 11,
+                          paddingHorizontal: 14,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: t.line,
+                          backgroundColor: t.surface2,
+                          opacity: shareAnalysis.isPending || createAnalysis.isPending || updateAnalysis.isPending ? 0.7 : 1,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: "800", color: t.ink }}>
+                          {shareAnalysis.isPending ? "Sharing..." : "Share to client"}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={createPrequalification}
+                        disabled={convertAnalysis.isPending || createAnalysis.isPending || updateAnalysis.isPending}
+                        style={{
+                          paddingVertical: 11,
+                          paddingHorizontal: 14,
+                          borderRadius: 12,
+                          backgroundColor: convertAnalysis.isPending || createAnalysis.isPending || updateAnalysis.isPending ? t.chip : t.brand,
+                          opacity: convertAnalysis.isPending || createAnalysis.isPending || updateAnalysis.isPending ? 0.7 : 1,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: "800", color: convertAnalysis.isPending || createAnalysis.isPending || updateAnalysis.isPending ? t.ink4 : "#fff" }}>
+                          {convertAnalysis.isPending ? "Creating..." : "Create pending prequalification"}
+                        </Text>
+                      </Pressable>
+                    </View>
+                    {prequalFlash ? (
+                      <Text
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: "700",
+                          color: /created|shared|attached/i.test(prequalFlash) ? t.brand : t.danger,
+                          marginTop: 10,
+                        }}
+                      >
+                        {prequalFlash}
+                      </Text>
+                    ) : null}
+                  </Card>
+                ) : null}
 
                 {/* ── Fund-flow visuals ── */}
                 <Card pad={14}>

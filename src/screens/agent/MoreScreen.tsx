@@ -39,6 +39,7 @@ export function MoreScreen() {
     { icon: "user", label: "Profile", detail: user?.email ?? undefined, onPress: () => router.push("/agent/profile" as Href) },
     { icon: "calc", label: "Deal Analyzer", detail: "Fix & flip decisions", onPress: () => router.push("/agent/deal-analyzer" as Href) },
     { icon: "sliders", label: "Simulate", detail: "Pricing what-ifs", onPress: () => router.push("/agent/simulate" as Href) },
+    { icon: "docCheck", label: "Prequalifications", detail: "Pending + approved requests", onPress: () => router.push("/agent/prequalifications" as Href) },
     { icon: "bell", label: "Inbox", detail: "AI tasks + alerts", onPress: () => router.push("/agent/(tabs)/inbox" as Href) },
     { icon: "trend", label: "Performance", detail: "Funnel + velocity", onPress: () => router.push("/agent/performance" as Href) },
     { icon: "trend", label: "Rates", detail: "Today's market", onPress: () => router.push("/agent/rates" as Href) },

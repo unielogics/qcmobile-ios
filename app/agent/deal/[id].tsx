@@ -172,11 +172,12 @@ function LoanChatComposerProxy({
   const submit = async () => {
     const body = draft.trim();
     if (!body || send.isPending) return;
+    setDraft("");
     try {
       await send.mutateAsync({ dealId, body, mode: defaultMode as any });
-      setDraft("");
     } catch {
       // keep the draft so the user can retry
+      setDraft(body);
     }
   };
 
@@ -196,7 +197,6 @@ function LoanChatComposerProxy({
         placeholder="Message the client + AI on this deal…"
         placeholderTextColor={t.ink4}
         multiline
-        editable={!send.isPending}
         style={{
           flex: 1, minHeight: 40, maxHeight: 120,
           paddingVertical: 10, paddingHorizontal: 14,

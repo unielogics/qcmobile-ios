@@ -1,11 +1,11 @@
-// Broker-scoped AI Inbox.
+// Broker-scoped Elara Inbox.
 //
 // Replaces the previous "Messages" bottom-tab. Surfaces every PENDING
 // AI task whose loan is in the broker's book (the broker_id filter is
 // effectively `task.loan_id ∈ useLoans("mine").map(l => l.id)`).
 //
 // Each row is a tappable card: priority dot + title + summary + source
-// pill + "Xh ago". Tap → drills into the loan's AI Secretary tab.
+// pill + "Xh ago". Tap → drills into the loan's Elara tab.
 //
 // Thread list (the old Messages content) is still reachable via the
 // AI FAB on the Today screen → AIChatSheet's conversations view.

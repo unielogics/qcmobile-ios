@@ -61,7 +61,7 @@ export function PauseBanner({ loanId, message }: Props) {
         ellipsizeMode="tail"
         style={{ flex: 1, minWidth: 0, fontSize: 12, color: t.ink2 }}
       >
-        <Text style={{ fontWeight: "800", color: t.warn }}>AI paused · </Text>
+        <Text style={{ fontWeight: "800", color: t.warn }}>Elara paused · </Text>
         {message ?? `${who} is replying. Resumes in ~${minutes} min.`}
       </Text>
     </View>

@@ -1,4 +1,4 @@
-// AI Intelligent Underwriter chat sheet (mobile).
+// Elara chat sheet (mobile).
 //
 // Default landing surface = the conversations LIST. The list is
 // DERIVED, not raw — exactly one Account thread row + one row per
@@ -197,6 +197,10 @@ export function AIChatSheet({ visible, onClose, context, initialThreadId }: Prop
     const text = raw.trim();
     if ((!text && staged.length === 0) || sendMessage.isPending) return;
     setError(null);
+    const priorInput = input;
+    const priorStaged = staged;
+    setInput("");
+    setStaged([]);
     try {
       let threadId = activeThreadId;
       if (!threadId) {
@@ -212,10 +216,10 @@ export function AIChatSheet({ visible, onClose, context, initialThreadId }: Prop
         body: text,
         attachment_tokens: tokens.length > 0 ? tokens : null,
       });
-      setInput("");
-      setStaged([]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "AI failed to respond.");
+      setInput(priorInput);
+      setStaged(priorStaged);
+      setError(e instanceof Error ? e.message : "Elara failed to respond.");
     }
   };
 
@@ -261,9 +265,15 @@ export function AIChatSheet({ visible, onClose, context, initialThreadId }: Prop
     try {
       switch (action.kind) {
         case "upload_document": {
-          // Deep-link into the vault tab with the doc pre-targeted.
-          // Vault's `useEffect` reads ?fulfill and fires the upload
-          // sheet pre-bound (no property + checklist picker).
+          // In-chat upload: open the picker right here and stage the
+          // file on the composer — the borrower never leaves the
+          // conversation. Only works in a loan-scoped thread (backend
+          // rejects attachments on account-wide threads); fall back to
+          // the vault deep-link otherwise.
+          if (activeThreadId && activeThreadLoanId) {
+            await onAttachPress();
+            return;
+          }
           if (action.document_id) {
             onClose();
             router.push({
@@ -272,8 +282,6 @@ export function AIChatSheet({ visible, onClose, context, initialThreadId }: Prop
             });
             return;
           }
-          // No document_id — just bounce to the vault tab and let
-          // the user pick.
           onClose();
           router.push("/(tabs)/vault");
           return;
@@ -297,7 +305,7 @@ export function AIChatSheet({ visible, onClose, context, initialThreadId }: Prop
           return;
         }
         case "request_prequalification": {
-          // AI Secretary path — agent says "Marcus is ready for prequal"
+          // Elara path — agent says "Marcus is ready for prequal"
           // → AI emits this action card → tap → fires the same endpoint
           // as the "Ready for prequal" button on /agent/client/[id].
           if (!action.client_id) return;
@@ -434,7 +442,7 @@ export function AIChatSheet({ visible, onClose, context, initialThreadId }: Prop
                 numberOfLines={1}
                 style={{ fontSize: 14, fontWeight: "800", color: t.ink, letterSpacing: -0.2 }}
               >
-                {showList ? "Conversations" : (activeTitle ?? "AI Intelligent Underwriter")}
+                {showList ? "Conversations" : (activeTitle ?? "Elara")}
               </Text>
               <Text
                 numberOfLines={1}
@@ -710,7 +718,6 @@ export function AIChatSheet({ visible, onClose, context, initialThreadId }: Prop
                   onChangeText={setInput}
                   placeholder={staged.length > 0 ? "Add a note (optional)…" : "Message…"}
                   placeholderTextColor={t.ink4}
-                  editable={!sendMessage.isPending}
                   onSubmitEditing={() => send(input)}
                   returnKeyType="send"
                   multiline

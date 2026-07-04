@@ -72,7 +72,7 @@ export default function AgentSettingsRoute() {
         >
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: "700", color: t.ink, marginBottom: 2 }}>
-              AI Assistant
+              Elara
             </Text>
             <Text style={{ fontSize: 12, color: t.ink3, lineHeight: 16 }}>
               Buyer / seller playbooks · cadence · handoff gates · message style.

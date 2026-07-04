@@ -2,6 +2,7 @@
 // sits on the left, screen title underneath, account/theme/notification
 // chips on the right.
 
+import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useTheme } from "@/design-system/ThemeProvider";
@@ -18,12 +19,14 @@ function initialsOf(name: string | undefined): string {
 export function TopBar({
   title,
   onAIPress,
+  titleAction,
 }: {
   title: string;
   // When provided, the bell slot is replaced with an AI-secretary
   // launcher chip. Used by the agent Today tab to surface a global
   // entry point to the account-wide AIChatSheet.
   onAIPress?: () => void;
+  titleAction?: ReactNode;
 }) {
   const { t, isDark, toggle } = useTheme();
   const router = useRouter();
@@ -128,9 +131,12 @@ export function TopBar({
       </View>
 
       {/* Screen title — large, on its own row beneath the brand block */}
-      <Text style={{ fontSize: 24, fontWeight: "700", letterSpacing: -0.6, color: t.ink, marginTop: 10 }}>
-        {title}
-      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 10 }}>
+        <Text style={{ flex: 1, minWidth: 0, fontSize: 24, fontWeight: "700", letterSpacing: -0.6, color: t.ink }}>
+          {title}
+        </Text>
+        {titleAction}
+      </View>
     </View>
   );
 }

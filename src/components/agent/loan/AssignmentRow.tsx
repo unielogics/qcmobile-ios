@@ -1,4 +1,4 @@
-// Swipe-to-assign row primitive for the broker AI Secretary.
+// Swipe-to-assign row primitive for the broker Elara.
 //
 // Gestures:
 //   - Swipe LEFT  → assigns the task to AI         (calls onAssignAI)

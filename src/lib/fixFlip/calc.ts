@@ -430,7 +430,7 @@ function validate(i: FixFlipInputs): string[] {
   if (!(n(i.rehabCost) >= 0)) e.push("Rehab cost is required");
   if (!(n(i.constructionMonths) > 0)) e.push("Construction timeline is required");
   if (!(n(i.monthsToSell) > 0)) e.push("Months to sell is required");
-  if (i.creditScore == null) e.push("Credit score is required for program matching");
+  if (i.creditScore == null) e.push("Credit profile is required for program matching");
   return e;
 }
 

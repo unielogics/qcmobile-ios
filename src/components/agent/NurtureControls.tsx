@@ -4,7 +4,7 @@
 // Three controls:
 //   1. Auto-nurture toggle — flips ai_secretary_settings.outreach_mode
 //      between "off" and "draft_first" (broker reviews before send) or
-//      "portal_auto" (AI sends through the portal autonomously).
+//      "portal_auto" (Elara sends through the portal autonomously).
 //   2. Cadence preset — gentle / standard / aggressive, persisted to
 //      ai_secretary_settings.default_cadence on the realtor-phase
 //      ClientAIPlan.
@@ -98,8 +98,8 @@ export function NurtureControls({ clientId, hasPhone, hasEmail }: Props) {
     try {
       const res = await sendIntake.mutateAsync({ clientId });
       Alert.alert(
-        "Intake link sent",
-        `Delivered via ${res.sent_via}. Client receives a tracked link to complete intake on the portal.`,
+        "Intake link queued",
+        `Queued via ${res.sent_via}. The client receives a tracked link to complete intake on the portal.`,
       );
     } catch (e) {
       Alert.alert("Couldn't send", e instanceof Error ? e.message : "Try again later.");
@@ -126,7 +126,7 @@ export function NurtureControls({ clientId, hasPhone, hasEmail }: Props) {
             Nurture this lead
           </Text>
           <Text style={{ fontSize: 11.5, color: t.ink3, marginTop: 1 }} numberOfLines={2}>
-            Let the AI keep this client engaged on your schedule until they're funding-ready.
+            Let Elara keep this client engaged on your schedule until they're funding-ready.
           </Text>
         </View>
         <NurtureToggle on={isOn} loading={setNurture.isPending} onPress={toggleNurture} />
