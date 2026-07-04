@@ -7,9 +7,10 @@
 // Mirrors the desktop AgentLeadModal owned-assets block.
 
 import { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useTheme } from "@/design-system/ThemeProvider";
 import { Icon } from "@/design-system/Icon";
+import { US_STATES } from "@/lib/usStates";
 
 export interface OwnedAsset {
   address: string;
@@ -45,6 +46,7 @@ interface Props {
 export function OwnedAssetsEditor({ assets, onChange }: Props) {
   const { t } = useTheme();
   const [expanded, setExpanded] = useState<number | null>(assets.length === 0 ? null : 0);
+  const [statePickerOpen, setStatePickerOpen] = useState<number | null>(null);
 
   const updateRow = (idx: number, patch: Partial<OwnedAsset>) => {
     onChange(assets.map((a, i) => (i === idx ? { ...a, ...patch } : a)));
@@ -100,15 +102,52 @@ export function OwnedAssetsEditor({ assets, onChange }: Props) {
                     <RowInput t={t} value={a.city} placeholder="City" onChange={(v) => updateRow(idx, { city: v })} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <RowInput
-                      t={t}
-                      value={a.state}
-                      placeholder="ST"
-                      autoCapitalize="characters"
-                      onChange={(v) => updateRow(idx, { state: v.toUpperCase().slice(0, 2) })}
-                    />
+                    <Pressable
+                      onPress={() => setStatePickerOpen((openIdx) => (openIdx === idx ? null : idx))}
+                      style={{
+                        minHeight: 38,
+                        backgroundColor: t.surface2,
+                        borderColor: t.line,
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        paddingHorizontal: 10,
+                        paddingVertical: 8,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <Text style={{ color: a.state ? t.ink : t.ink4, fontSize: 13 }}>
+                        {a.state || "ST"}
+                      </Text>
+                      <Icon name={statePickerOpen === idx ? "chevU" : "chevD"} size={12} color={t.ink3} />
+                    </Pressable>
                   </View>
                 </View>
+                {statePickerOpen === idx ? (
+                  <View style={{ maxHeight: 190, borderRadius: 9, borderWidth: 1, borderColor: t.line, overflow: "hidden" }}>
+                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                      {US_STATES.map((state) => (
+                        <Pressable
+                          key={state.code}
+                          onPress={() => {
+                            updateRow(idx, { state: state.code });
+                            setStatePickerOpen(null);
+                          }}
+                          style={{
+                            paddingHorizontal: 11,
+                            paddingVertical: 9,
+                            borderBottomWidth: 1,
+                            borderBottomColor: t.line,
+                            backgroundColor: a.state === state.code ? t.brandSoft : t.surface,
+                          }}
+                        >
+                          <Text style={{ color: t.ink, fontSize: 12.5 }}>{state.code} - {state.name}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : null}
                 <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
                   {USE_OPTIONS.map((u) => {
                     const active = a.use === u.value;

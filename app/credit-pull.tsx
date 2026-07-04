@@ -1,6 +1,8 @@
-// Soft credit pull — flow:
-//   intro    → explains Pro Terms + payment/FCRA requirements
-//   payment  → e-sign + Stripe SetupIntent payment authorization
+// Credit & Pre-Authorization — flow:
+//   intro    → explains credit access + pre-authorization requirements
+//   esign    → E-SIGN/UETA consent, payment authorization terms, typed name, signature
+//   billing  → billing address for Stripe
+//   card     → Stripe SetupIntent card collection
 //   form     → editable credit details; pre-filled from user account + client record
 //   review   → read-only summary with Edit button
 //   consent  → FCRA legal text + "I Authorize" button
@@ -17,7 +19,7 @@
 // anything in the form step before committing; review-then-consent gives
 // them a chance to spot mismatches before the bureau is hit.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   KeyboardAvoidingView,
@@ -34,12 +36,13 @@ import { useTheme } from "@/design-system/ThemeProvider";
 import { Card, Pill, QButton, SectionLabel } from "@/design-system/primitives";
 import { Icon } from "@/design-system/Icon";
 import { PaymentAuthorizationGate } from "@/components/PaymentAuthorizationGate";
+import { GoogleAddressInput } from "@/components/property/GoogleAddressInput";
 import { useCreditPullAccess, useCreditSummary, useCurrentUser, useMyClient, useMyCredit, useStartCreditPull } from "@/hooks/useApi";
 import { ApiError } from "@/lib/api";
 import { creditDisplayFromCredit } from "@/lib/creditDisplay";
-import type { CreditSummaryProduct } from "@/lib/types";
+import type { AddressParts, CreditSummaryProduct } from "@/lib/types";
 
-type Stage = "intro" | "payment" | "form" | "review" | "consent" | "pulling" | "done";
+type Stage = "intro" | "esign" | "billing" | "card" | "form" | "review" | "consent" | "pulling" | "done";
 
 // `mode` lets callers customize copy. URL param: /credit-pull?mode=refresh|expired.
 //   first   — borrower has no credit on file (default)
@@ -103,6 +106,30 @@ const EMPTY_FORM: Form = {
   ssn: "",
 };
 
+function formToAddressParts(form: Form): AddressParts {
+  return {
+    street: form.street || null,
+    city: form.city || null,
+    state: form.state || null,
+    zip: form.zip || null,
+    full: [form.street, form.city, [form.state, form.zip].filter(Boolean).join(" ")]
+      .filter(Boolean)
+      .join(", ") || null,
+    latitude: null,
+    longitude: null,
+  };
+}
+
+function applyAddressToForm(form: Form, address: AddressParts): Form {
+  return {
+    ...form,
+    street: address.street || address.full || form.street,
+    city: address.city || form.city,
+    state: (address.state || form.state || "").toUpperCase().slice(0, 2),
+    zip: address.zip || form.zip,
+  };
+}
+
 function splitName(full: string | undefined | null): { first: string; last: string } {
   if (!full) return { first: "", last: "" };
   const parts = full.trim().split(/\s+/);
@@ -119,13 +146,14 @@ export default function CreditPull() {
   const { data: client } = useMyClient();
   const creditAccess = useCreditPullAccess();
   const creditAccessData = creditAccess.data;
-  const { data: existingCredit } = useMyCredit();
+  const { data: existingCredit, refetch: refetchCredit } = useMyCredit();
   const [paymentCompletedThisSession, setPaymentCompletedThisSession] = useState(false);
-  const needsPaymentAuthorization = Boolean(
-    creditAccessData?.requires_payment_authorization &&
-      !creditAccessData.payment_authorized &&
-      !paymentCompletedThisSession,
+  const paymentAuthorizationSatisfied = Boolean(
+    paymentCompletedThisSession ||
+      (creditAccessData &&
+        (!creditAccessData.requires_payment_authorization || creditAccessData.payment_authorized)),
   );
+  const needsPaymentAuthorization = !paymentAuthorizationSatisfied;
 
   // Derive the effective mode from the URL param OR from observed state:
   // a valid (non-expired) pull on file becomes "refresh"; an expired pull
@@ -155,20 +183,12 @@ export default function CreditPull() {
   const existingCreditDisplay = creditDisplayFromCredit(existingCredit);
 
   const [stage, setStage] = useState<Stage>("intro");
-  const [stageInitialized, setStageInitialized] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(EMPTY_FORM);
-  const [statePickerOpen, setStatePickerOpen] = useState(false);
   // SSN starts hidden; it's only required if the bureau can't match
   // on name+address+DOB alone. Backend signals that with a structured
   // 422 carrying `code: "no_hit_provide_ssn"`.
   const [ssnRequired, setSsnRequired] = useState(false);
-
-  useEffect(() => {
-    if (!creditAccessData || stageInitialized) return;
-    setStage(needsPaymentAuthorization ? "intro" : "form");
-    setStageInitialized(true);
-  }, [creditAccessData, needsPaymentAuthorization, stageInitialized]);
 
   // Pre-fill from account + client record once both are loaded. We only
   // overwrite fields the borrower hasn't already typed, so reopening the
@@ -204,8 +224,8 @@ export default function CreditPull() {
 
   const submit = async () => {
     if (needsPaymentAuthorization) {
-      setErrorMsg("Finish the payment pre-authorization step first, then we can run the soft pull.");
-      setStage("intro");
+      setErrorMsg("Finish Credit & Pre-Authorization first, then we can run the soft pull.");
+      setStage("esign");
       return;
     }
     setStage("pulling");
@@ -254,9 +274,9 @@ export default function CreditPull() {
       if (code === "payment_authorization_required") {
         setErrorMsg(
           detailMsg ||
-            "Finish the payment pre-authorization step first, then we can run the soft pull.",
+            "Finish Credit & Pre-Authorization first, then we can run the soft pull.",
         );
-        setStage("intro");
+        setStage("esign");
         return;
       }
       setErrorMsg(
@@ -269,8 +289,17 @@ export default function CreditPull() {
   const handlePaymentComplete = async () => {
     setErrorMsg(null);
     setPaymentCompletedThisSession(true);
-    await creditAccess.refetch();
+    await Promise.all([creditAccess.refetch(), refetchCredit()]);
     setStage("form");
+  };
+
+  const handleAuthorizationStepChange = useCallback((nextStage: "esign" | "billing" | "card") => {
+    setStage(nextStage);
+  }, []);
+
+  const startCreditAuthorization = () => {
+    setErrorMsg(null);
+    setStage(needsPaymentAuthorization ? "esign" : "form");
   };
 
   return (
@@ -291,11 +320,7 @@ export default function CreditPull() {
           </Pressable>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Text style={{ fontSize: 24, fontWeight: "800", color: t.ink, flex: 1 }}>
-              {mode === "expired"
-                ? "Refresh Your Credit"
-                : mode === "refresh"
-                  ? "Re-run Soft Pull"
-                  : "Soft Credit Pull"}
+              Credit & Pre-Authorization
             </Text>
             {mode === "expired" ? (
               <Pill bg={t.dangerBg} color={t.danger}>90-day expired</Pill>
@@ -382,13 +407,16 @@ export default function CreditPull() {
           {!showsValidPullGate && !showsNoScoreGate && stage === "intro" && (
             <IntroStage
               errorMsg={errorMsg}
-              onStart={() => setStage(needsPaymentAuthorization ? "payment" : "form")}
+              onStart={startCreditAuthorization}
               onLater={() => router.back()}
             />
           )}
 
-          {!showsValidPullGate && !showsNoScoreGate && stage === "payment" && (
-            <PaymentAuthorizationGate onComplete={handlePaymentComplete} />
+          {!showsValidPullGate && !showsNoScoreGate && (stage === "esign" || stage === "billing" || stage === "card") && (
+            <PaymentAuthorizationGate
+              onComplete={handlePaymentComplete}
+              onStepChange={handleAuthorizationStepChange}
+            />
           )}
 
           {!showsValidPullGate && !showsNoScoreGate && stage === "form" && (
@@ -396,7 +424,6 @@ export default function CreditPull() {
               form={form}
               onChange={setForm}
               onContinue={() => setStage("review")}
-              onPickState={() => setStatePickerOpen(true)}
               valid={formValid}
               ssnRequired={ssnRequired}
               ssnPrompt={ssnRequired ? errorMsg : null}
@@ -434,40 +461,41 @@ export default function CreditPull() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <StatePickerModal
-        visible={statePickerOpen}
-        currentCode={form.state}
-        onClose={() => setStatePickerOpen(false)}
-        onPick={(code) => {
-          setForm((f) => ({ ...f, state: code }));
-          setStatePickerOpen(false);
-        }}
-      />
     </SafeAreaView>
   );
 }
 
 function ProgressBar({ stage }: { stage: Stage }) {
   const { t } = useTheme();
-  const order: Stage[] = ["intro", "payment", "form", "review", "consent", "pulling", "done"];
-  const idx = Math.max(0, order.indexOf(stage));
-  const steps: { id: Stage; label: string }[] = [
-    { id: "intro", label: "Access" },
-    { id: "payment", label: "Payment" },
-    { id: "form", label: "Details" },
-    { id: "consent", label: "Consent" },
-    { id: "done", label: "Result" },
+  const stageRank: Record<Stage, number> = {
+    intro: 0,
+    esign: 1,
+    billing: 2,
+    card: 2,
+    form: 3,
+    review: 3,
+    consent: 4,
+    pulling: 4,
+    done: 5,
+  };
+  const idx = stageRank[stage] ?? 0;
+  const steps: { id: Stage; label: string; rank: number }[] = [
+    { id: "intro", label: "Start", rank: 0 },
+    { id: "esign", label: "E-sign", rank: 1 },
+    { id: "billing", label: "Billing", rank: 2 },
+    { id: "form", label: "Credit Info", rank: 3 },
+    { id: "consent", label: "Consent", rank: 4 },
+    { id: "done", label: "Result", rank: 5 },
   ];
   return (
     <View style={{ flexDirection: "row", gap: 6 }}>
       {steps.map((step) => {
-        const stepIdx = order.indexOf(step.id);
-        const reached = idx >= stepIdx;
+        const reached = idx >= step.rank;
         const active =
-          (stage === step.id) ||
+          idx === step.rank ||
+          (stage === "card" && step.id === "billing") ||
           (stage === "review" && step.id === "form") ||
-          (stage === "pulling" && step.id === "consent") ||
-          (stage === "done" && step.id === "done");
+          (stage === "pulling" && step.id === "consent");
         return (
           <View
             key={step.id}
@@ -518,16 +546,16 @@ function IntroStage({
           <Icon name="bolt" size={24} color={t.brand} />
         </View>
         <View style={{ flex: 1 }}>
-          <SectionLabel>Unlock Pro Terms</SectionLabel>
+          <SectionLabel>Credit & Pre-Authorization</SectionLabel>
           <Text style={{ color: t.ink, fontSize: 20, fontWeight: "900", marginTop: 2 }}>
-            One guided authorization
+            Start with authorization
           </Text>
         </View>
       </View>
       <Text style={{ color: t.ink2, fontSize: 13, lineHeight: 20 }}>
-        To activate credit-based terms, you will sign the payment pre-authorization,
-        securely save a card through Stripe, confirm FCRA consent, and then run the
-        soft pull. The soft pull has no score impact.
+        To activate credit-based terms, you will e-sign the payment pre-authorization,
+        securely save a card through Stripe, provide the bureau information, confirm
+        FCRA consent, and then run a soft pull with no score impact.
       </Text>
       <Text style={{ color: t.ink3, fontSize: 12, lineHeight: 18 }}>
         You can use the app now and come back later. Banking options, credit-derived
@@ -539,7 +567,7 @@ function IntroStage({
         </View>
       ) : null}
       <View style={{ gap: 8 }}>
-        <QButton label="Start credit unlock" onPress={onStart} />
+        <QButton label="Start Credit & Pre-Authorization" onPress={onStart} />
         <QButton label="Do later" variant="secondary" onPress={onLater} />
       </View>
     </Card>
@@ -550,7 +578,6 @@ function FormStage({
   form,
   onChange,
   onContinue,
-  onPickState,
   valid,
   ssnRequired,
   ssnPrompt,
@@ -558,13 +585,11 @@ function FormStage({
   form: Form;
   onChange: (f: Form) => void;
   onContinue: () => void;
-  onPickState: () => void;
   valid: boolean;
   ssnRequired: boolean;
   ssnPrompt: string | null;
 }) {
   const { t } = useTheme();
-  const stateName = US_STATES.find((s) => s.code === form.state)?.name;
   return (
     <Card pad={16}>
       <SectionLabel>Legal Name</SectionLabel>
@@ -586,63 +611,11 @@ function FormStage({
       />
 
       <SectionLabel>Address Used for Credit</SectionLabel>
-      <Field
-        label="Street"
-        value={form.street}
-        onChangeText={(v) => onChange({ ...form, street: v })}
-        autoCapitalize="words"
-      />
-      <Field
-        label="City"
-        value={form.city}
-        onChangeText={(v) => onChange({ ...form, city: v })}
-        autoCapitalize="words"
-      />
-
-      {/* State picker — opens a modal of US states to keep state codes valid. */}
-      <View style={{ marginBottom: 10 }}>
-        <Text
-          style={{
-            fontSize: 11,
-            color: t.ink3,
-            fontWeight: "700",
-            marginBottom: 4,
-            textTransform: "uppercase",
-          }}
-        >
-          State
-        </Text>
-        <Pressable
-          onPress={onPickState}
-          style={{
-            backgroundColor: t.surface2,
-            borderColor: t.line,
-            borderWidth: 1,
-            borderRadius: 10,
-            padding: 12,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 14,
-              color: form.state ? t.ink : t.ink4,
-            }}
-          >
-            {form.state ? `${form.state} — ${stateName}` : "Select state…"}
-          </Text>
-          <Icon name="chevD" size={14} color={t.ink3} />
-        </Pressable>
-      </View>
-
-      <Field
-        label="ZIP"
-        value={form.zip}
-        onChangeText={(v) => onChange({ ...form, zip: v.replace(/[^0-9-]/g, "").slice(0, 10) })}
-        keyboardType="number-pad"
-        placeholder="12345"
+      <GoogleAddressInput
+        value={formToAddressParts(form)}
+        onChange={(next) => onChange(applyAddressToForm(form, next))}
+        label="Credit address"
+        helperText="Select the address that matches your credit file. State is selected from the official USPS list."
       />
 
       {ssnRequired ? (
@@ -793,7 +766,7 @@ function ConsentStage({
         </View>
       ) : null}
       <View style={{ marginTop: 12, gap: 8 }}>
-        <QButton label="I Authorize · Run Soft Pull" onPress={onAuthorize} />
+        <QButton label="I Authorize · Run Credit Check" onPress={onAuthorize} />
         <QButton label="Back to Review" variant="secondary" onPress={onBack} />
       </View>
     </Card>

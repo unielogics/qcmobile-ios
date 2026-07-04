@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PanResponder, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { PanResponder, Platform, Pressable, Text, TextInput, View } from "react-native";
 import { CardField, confirmSetupIntent, initStripe } from "@stripe/stripe-react-native";
 import Svg, { Path } from "react-native-svg";
 import { useTheme } from "@/design-system/ThemeProvider";
 import { Card, QButton, SectionLabel } from "@/design-system/primitives";
+import { GoogleAddressInput } from "@/components/property/GoogleAddressInput";
 import {
   useCompletePaymentAuthorization,
   useCreateSetupIntent,
@@ -12,7 +13,9 @@ import {
   usePaymentAuthorizationStatus,
   useStartPaymentAuthorization,
 } from "@/hooks/useApi";
-import type { BillingAddress, PaymentAuthorizationStartResponse } from "@/lib/types";
+import type { AddressParts, BillingAddress, PaymentAuthorizationStartResponse, SetupIntentResponse } from "@/lib/types";
+
+type AuthorizationStep = "esign" | "billing" | "card";
 
 const EMPTY_BILLING: BillingAddress = {
   name: "",
@@ -26,7 +29,38 @@ const EMPTY_BILLING: BillingAddress = {
   country: "US",
 };
 
-export function PaymentAuthorizationGate({ onComplete }: { onComplete?: () => void } = {}) {
+function billingToAddressParts(billing: BillingAddress): AddressParts {
+  return {
+    street: billing.line1 || null,
+    city: billing.city || null,
+    state: billing.state || null,
+    zip: billing.postal_code || null,
+    full: [billing.line1, billing.city, [billing.state, billing.postal_code].filter(Boolean).join(" ")]
+      .filter(Boolean)
+      .join(", ") || null,
+    latitude: null,
+    longitude: null,
+  };
+}
+
+function applyAddressToBilling(prev: BillingAddress, address: AddressParts): BillingAddress {
+  return {
+    ...prev,
+    line1: address.street || address.full || prev.line1,
+    city: address.city || prev.city,
+    state: (address.state || prev.state || "").toUpperCase().slice(0, 2),
+    postal_code: address.zip || prev.postal_code,
+    country: "US",
+  };
+}
+
+export function PaymentAuthorizationGate({
+  onComplete,
+  onStepChange,
+}: {
+  onComplete?: () => void;
+  onStepChange?: (step: AuthorizationStep) => void;
+} = {}) {
   const { t, isDark } = useTheme();
   const { data: user } = useCurrentUser();
   const { data: client } = useMyClient();
@@ -35,6 +69,8 @@ export function PaymentAuthorizationGate({ onComplete }: { onComplete?: () => vo
   const setup = useCreateSetupIntent();
   const complete = useCompletePaymentAuthorization();
   const [started, setStarted] = useState<PaymentAuthorizationStartResponse | null>(null);
+  const [setupIntent, setSetupIntent] = useState<SetupIntentResponse | null>(null);
+  const [step, setStep] = useState<AuthorizationStep>("esign");
   const [billing, setBilling] = useState<BillingAddress>(EMPTY_BILLING);
   const [typedName, setTypedName] = useState("");
   const [esignConsent, setEsignConsent] = useState(false);
@@ -42,9 +78,14 @@ export function PaymentAuthorizationGate({ onComplete }: { onComplete?: () => vo
   const [cardComplete, setCardComplete] = useState(false);
   const [paths, setPaths] = useState<string[]>([]);
   const currentPath = useRef("");
+  const startAttempted = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
-  const publishableKey = status.data?.stripe_publishable_key;
+  useEffect(() => {
+    onStepChange?.(step);
+  }, [onStepChange, step]);
+
+  const publishableKey = setupIntent?.stripe_publishable_key || status.data?.stripe_publishable_key;
   useEffect(() => {
     if (publishableKey) {
       initStripe({ publishableKey }).catch(() => undefined);
@@ -91,12 +132,61 @@ export function PaymentAuthorizationGate({ onComplete }: { onComplete?: () => vo
     }
   };
 
+  useEffect(() => {
+    if (started || start.isPending || startAttempted.current) return;
+    startAttempted.current = true;
+    void begin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started, start.isPending]);
+
+  const continueToBilling = () => {
+    setError(null);
+    if (!started) {
+      setError("Authorization terms are still loading. Please retry in a moment.");
+      return;
+    }
+    if (!typedName.trim() || !esignConsent || !paymentConsent || paths.length === 0) {
+      setError("Complete the consents, legal name, and drawn signature before continuing.");
+      return;
+    }
+    setStep("billing");
+  };
+
+  const continueToCard = async () => {
+    setError(null);
+    const active = started;
+    if (!active) {
+      setError("Authorization terms are still loading. Please retry in a moment.");
+      return;
+    }
+    if (!billing.name || !billing.line1 || !billing.city || !billing.state || !billing.postal_code) {
+      setError("Complete the billing address before continuing.");
+      return;
+    }
+    try {
+      setCardComplete(false);
+      setSetupIntent(null);
+      const res = await setup.mutateAsync({
+        authorization_id: active.authorization.id,
+        billing,
+      });
+      await initStripe({ publishableKey: res.stripe_publishable_key });
+      setSetupIntent(res);
+      setStep("card");
+    } catch (err) {
+      setError(readErrorMessage(err));
+    }
+  };
+
   const submit = async () => {
     setError(null);
-    const active = started ?? (await start.mutateAsync());
-    if (!started) setStarted(active);
-    if (!publishableKey && !status.data?.stripe_publishable_key) {
-      setError("Stripe is not configured yet. Contact Qualified Commercial.");
+    const active = started;
+    if (!active) {
+      setError("Authorization terms are still loading. Please retry in a moment.");
+      return;
+    }
+    if (!setupIntent) {
+      setError("Secure card setup is still loading. Please retry in a moment.");
       return;
     }
     if (!typedName.trim() || !esignConsent || !paymentConsent || paths.length === 0) {
@@ -112,10 +202,6 @@ export function PaymentAuthorizationGate({ onComplete }: { onComplete?: () => vo
       return;
     }
     try {
-      const setupIntent = await setup.mutateAsync({
-        authorization_id: active.authorization.id,
-        billing,
-      });
       await initStripe({ publishableKey: setupIntent.stripe_publishable_key });
       const result = await confirmSetupIntent(setupIntent.client_secret, {
         paymentMethodType: "Card",
@@ -157,36 +243,58 @@ export function PaymentAuthorizationGate({ onComplete }: { onComplete?: () => vo
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: t.bg }} contentContainerStyle={{ padding: 18, paddingBottom: 40, gap: 14 }}>
+    <View style={{ gap: 14 }}>
       <View style={{ gap: 5 }}>
         <Text style={{ color: t.ink4, fontSize: 12, fontWeight: "800", letterSpacing: 1.2, textTransform: "uppercase" }}>
-          Credit access
+          Credit & Pre-Authorization
         </Text>
         <Text style={{ color: t.ink, fontSize: 26, fontWeight: "900", letterSpacing: -0.6 }}>
-          Payment authorization required
+          E-sign first, then billing
         </Text>
         <Text style={{ color: t.ink3, fontSize: 14, lineHeight: 20 }}>
-          The app is available now. Credit pulls and credit-derived terms unlock after you sign the authorization and save a card securely through Stripe.
+          Credit pulls and credit-derived terms unlock after you sign the authorization,
+          save a card securely through Stripe, and complete the credit consent.
         </Text>
       </View>
 
-      {!started ? (
+      {!started && step === "esign" ? (
         <Card pad={18} style={{ gap: 12 }}>
-          <Text style={{ color: t.ink, fontSize: 17, fontWeight: "800" }}>What this covers</Text>
+          <SectionLabel>E-sign authorization</SectionLabel>
           <Text style={{ color: t.ink3, fontSize: 13, lineHeight: 20 }}>
-            Expenses can include soft pulls, hard pulls, inspections, appraisals, vendor hard costs, and third-party services needed to build your funding file. Charges appear as QC - Qualified Commercial LLC and require approval before billing.
+            Loading the authorization terms before we collect any credit information.
           </Text>
-          <QButton label="Begin authorization" onPress={begin} disabled={start.isPending} />
+          {error ? (
+            <Text style={{ color: t.danger, fontSize: 13, fontWeight: "700", lineHeight: 18 }}>{error}</Text>
+          ) : null}
+          <QButton label={start.isPending ? "Loading…" : "Retry"} onPress={begin} disabled={start.isPending} />
         </Card>
-      ) : (
+      ) : null}
+
+      {started && step === "esign" ? (
         <>
           <Card pad={18} style={{ gap: 10 }}>
             <SectionLabel>Authorization terms</SectionLabel>
-            <Text style={{ color: t.ink3, fontSize: 12, lineHeight: 18 }} numberOfLines={8}>
+            <Text style={{ color: t.ink3, fontSize: 12, lineHeight: 18 }}>
               {started.document.text}
             </Text>
             <ConsentRow label="I consent to electronic records and signatures under E-SIGN/UETA." value={esignConsent} onPress={() => setEsignConsent((v) => !v)} />
             <ConsentRow label="I authorize QC - Qualified Commercial LLC to keep this payment method on file for approved funding-file expenses." value={paymentConsent} onPress={() => setPaymentConsent((v) => !v)} />
+          </Card>
+
+          <Card pad={18} style={{ gap: 8 }}>
+            <SectionLabel>Secure payment handling</SectionLabel>
+            <Text style={{ color: t.ink3, fontSize: 13, lineHeight: 19 }}>
+              Qualified Commercial does not store raw card numbers, CVC, or sensitive card
+              data. Card details are collected and tokenized by Stripe. We store only Stripe
+              references, card brand, last four, expiration, billing snapshot, and audit records.
+            </Text>
+            <Text style={{ color: t.ink3, fontSize: 13, lineHeight: 19 }}>
+              Future approved funding-file expenses may include soft pulls, hard pulls,
+              inspections, appraisals, vendor hard costs, and third-party services. Charges
+              appear as QC - Qualified Commercial LLC. You agree not to dispute or charge
+              back properly authorized expenses that were incurred for your file, including
+              third-party costs, even if the loan does not close.
+            </Text>
           </Card>
 
           <Card pad={18} style={{ gap: 10 }}>
@@ -206,25 +314,49 @@ export function PaymentAuthorizationGate({ onComplete }: { onComplete?: () => vo
             <QButton label="Clear signature" variant="secondary" onPress={() => setPaths([])} />
           </Card>
 
+          {error ? (
+            <Text style={{ color: t.danger, fontSize: 13, fontWeight: "700", lineHeight: 18 }}>{error}</Text>
+          ) : null}
+          <QButton label="Continue to billing" onPress={continueToBilling} disabled={start.isPending} />
+        </>
+      ) : null}
+
+      {started && step === "billing" ? (
+        <>
           <Card pad={18} style={{ gap: 10 }}>
             <SectionLabel>Billing address</SectionLabel>
             <Field label="Billing name" value={billing.name} onChangeText={(v) => setBilling((p) => ({ ...p, name: v }))} />
             <Field label="Email" value={billing.email ?? ""} onChangeText={(v) => setBilling((p) => ({ ...p, email: v }))} keyboardType="email-address" />
-            <Field label="Address" value={billing.line1} onChangeText={(v) => setBilling((p) => ({ ...p, line1: v }))} />
+            <GoogleAddressInput
+              value={billingToAddressParts(billing)}
+              onChange={(next) => setBilling((p) => applyAddressToBilling(p, next))}
+              label="Billing address"
+              helperText="Start typing and select the Google result. Use manual entry only if the address is not listed."
+            />
             <Field label="Unit optional" value={billing.line2 ?? ""} onChangeText={(v) => setBilling((p) => ({ ...p, line2: v }))} />
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <View style={{ flex: 1 }}><Field label="City" value={billing.city} onChangeText={(v) => setBilling((p) => ({ ...p, city: v }))} /></View>
-              <View style={{ width: 86 }}><Field label="State" value={billing.state} onChangeText={(v) => setBilling((p) => ({ ...p, state: v.toUpperCase().slice(0, 2) }))} /></View>
-            </View>
-            <Field label="ZIP" value={billing.postal_code} onChangeText={(v) => setBilling((p) => ({ ...p, postal_code: v }))} keyboardType="number-pad" />
           </Card>
 
+          {error ? (
+            <Text style={{ color: t.danger, fontSize: 13, fontWeight: "700", lineHeight: 18 }}>{error}</Text>
+          ) : null}
+          <QButton
+            label={setup.isPending ? "Preparing secure card…" : "Continue to secure card"}
+            onPress={continueToCard}
+            disabled={setup.isPending}
+          />
+          <QButton label="Back to e-sign" variant="secondary" onPress={() => setStep("esign")} />
+        </>
+      ) : null}
+
+      {started && step === "card" ? (
+        <>
           <Card pad={18} style={{ gap: 10 }}>
             <SectionLabel>Secure card</SectionLabel>
             <Text style={{ color: t.ink3, fontSize: 13, lineHeight: 19 }}>
-              Card details are collected by Stripe. Qualified Commercial stores only the token, brand, last four, expiration, and billing snapshot.
+              Card details are collected by Stripe. Qualified Commercial stores only Stripe
+              references, card brand, last four, expiration, and the billing snapshot.
             </Text>
-            {publishableKey ? (
+            {publishableKey && setupIntent ? (
               <CardField
                 postalCodeEnabled={false}
                 onCardChange={(card) => setCardComplete(Boolean(card.complete))}
@@ -232,17 +364,18 @@ export function PaymentAuthorizationGate({ onComplete }: { onComplete?: () => vo
                 style={{ height: 52, marginVertical: 6 }}
               />
             ) : (
-              <Text style={{ color: t.danger, fontSize: 13, fontWeight: "700" }}>Stripe is not configured yet.</Text>
+              <Text style={{ color: t.ink3, fontSize: 13, fontWeight: "700" }}>Preparing secure Stripe card entry…</Text>
             )}
           </Card>
 
           {error ? (
             <Text style={{ color: t.danger, fontSize: 13, fontWeight: "700", lineHeight: 18 }}>{error}</Text>
           ) : null}
-          <QButton label="Complete authorization" onPress={submit} disabled={setup.isPending || complete.isPending || start.isPending} />
+          <QButton label="Complete Credit & Pre-Authorization" onPress={submit} disabled={setup.isPending || complete.isPending || start.isPending} />
+          <QButton label="Back to billing" variant="secondary" onPress={() => setStep("billing")} />
         </>
-      )}
-    </ScrollView>
+      ) : null}
+    </View>
   );
 }
 
@@ -280,7 +413,7 @@ function ConsentRow({ label, value, onPress }: { label: string; value: boolean; 
   return (
     <Pressable onPress={onPress} style={{ flexDirection: "row", gap: 10, alignItems: "flex-start", paddingVertical: 8 }}>
       <View style={{ width: 22, height: 22, borderRadius: 7, borderWidth: 1, borderColor: value ? t.petrol : t.lineStrong, backgroundColor: value ? t.petrol : "transparent", alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ color: value ? "#06110E" : "transparent", fontWeight: "900" }}>✓</Text>
+        {value ? <Text style={{ color: "#06110E", fontWeight: "900" }}>✓</Text> : null}
       </View>
       <Text style={{ color: t.ink2, flex: 1, fontSize: 13, lineHeight: 19 }}>{label}</Text>
     </Pressable>

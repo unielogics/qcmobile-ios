@@ -23,10 +23,12 @@ import { useTheme } from "@/design-system/ThemeProvider";
 import { Icon } from "@/design-system/Icon";
 import { Pill, QButton } from "@/design-system/primitives";
 import { QC_FMT } from "@/design-system/tokens";
+import { GoogleAddressInput, formatAddressParts } from "@/components/property/GoogleAddressInput";
 import { useCreditSummary, useMyCredit, useSubmitPrequalRequest } from "@/hooks/useApi";
 import {
   PREQUAL_LOAN_TYPE_LABELS,
   PREQUAL_LTV_CAPS,
+  type AddressParts,
   type PrequalLoanType,
   type PrequalSowLineItem,
 } from "@/lib/types";
@@ -36,6 +38,18 @@ const PRODUCT_OPTIONS: PrequalLoanType[] = ["dscr_purchase", "dscr_refi", "fix_f
 
 // F&F project-viability cap — keep in sync with desktop.
 const FF_LTARV_CAP = 0.75;
+
+function addressStringToParts(address: string): AddressParts {
+  return {
+    street: null,
+    city: null,
+    state: null,
+    zip: null,
+    full: address.trim() || null,
+    latitude: null,
+    longitude: null,
+  };
+}
 
 interface Props {
   visible: boolean;
@@ -61,6 +75,7 @@ export function PreQualRequestSheet({
 
   const [loanType, setLoanType] = useState<PrequalLoanType>(initialLoanType ?? "dscr_purchase");
   const [address, setAddress] = useState(initialAddress ?? "");
+  const [addressParts, setAddressParts] = useState<AddressParts>(() => addressStringToParts(initialAddress ?? ""));
   const [purchaseText, setPurchaseText] = useState("");
   const [loanText, setLoanText] = useState("");
   const [closingDate, setClosingDate] = useState("");
@@ -80,6 +95,7 @@ export function PreQualRequestSheet({
     if (visible) {
       setLoanType(initialLoanType ?? "dscr_purchase");
       setAddress(initialAddress ?? "");
+      setAddressParts(addressStringToParts(initialAddress ?? ""));
       setPurchaseText("");
       setLoanText("");
       setClosingDate("");
@@ -324,12 +340,14 @@ export function PreQualRequestSheet({
                 </View>
 
                 {/* Address */}
-                <FieldText
-                  t={t}
+                <GoogleAddressInput
+                  value={addressParts}
+                  onChange={(next) => {
+                    setAddressParts(next);
+                    setAddress(formatAddressParts(next));
+                  }}
                   label="Target property address"
-                  value={address}
-                  onChange={setAddress}
-                  placeholder="123 Main St, Anytown, NJ 07026"
+                  helperText="Select the property from Google when available. Manual entry keeps state as a dropdown for consistency."
                 />
 
                 {/* Purchase + loan */}
