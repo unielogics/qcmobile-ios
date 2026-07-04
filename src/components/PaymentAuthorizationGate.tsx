@@ -26,7 +26,7 @@ const EMPTY_BILLING: BillingAddress = {
   country: "US",
 };
 
-export function PaymentAuthorizationGate() {
+export function PaymentAuthorizationGate({ onComplete }: { onComplete?: () => void } = {}) {
   const { t, isDark } = useTheme();
   const { data: user } = useCurrentUser();
   const { data: client } = useMyClient();
@@ -150,6 +150,7 @@ export function PaymentAuthorizationGate() {
         device_metadata: { platform: Platform.OS, flow: "mobile_credit_gate" },
       });
       await status.refetch();
+      onComplete?.();
     } catch (err) {
       setError(readErrorMessage(err));
     }

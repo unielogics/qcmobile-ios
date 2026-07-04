@@ -1,6 +1,5 @@
-import type { ReactNode } from "react";
-import { Pressable, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useState, type ReactNode } from "react";
+import { Modal, Pressable, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useTheme } from "@/design-system/ThemeProvider";
 import { Card } from "@/design-system/primitives";
@@ -12,6 +11,7 @@ export function FundingAccessGate({ children }: { children: ReactNode }) {
   const { t } = useTheme();
   const router = useRouter();
   const { data: credit, isLoading } = useCreditCurrent();
+  const [dismissed, setDismissed] = useState(false);
 
   // Don't flash the gate during initial credit load — show children
   // optimistically; the existing per-screen gates already handle the
@@ -31,35 +31,61 @@ export function FundingAccessGate({ children }: { children: ReactNode }) {
 
   const banner = eligibility.banner;
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top", "bottom"]}>
-      <View style={{ flex: 1, padding: 20, justifyContent: "center" }}>
-        <Card pad={24}>
-          <View style={{ alignItems: "center", marginBottom: 16 }}>
-            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
-              <Icon name="bolt" size={26} color={t.brand} />
+    <>
+      {children}
+      <Modal visible={!dismissed} transparent animationType="fade" statusBarTranslucent>
+        <View style={{ flex: 1, backgroundColor: "rgba(3,6,15,0.58)", justifyContent: "flex-end", padding: 18 }}>
+          <Card pad={22} style={{ gap: 14 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+                <Icon name="bolt" size={24} color={t.brand} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, fontWeight: "900", color: t.ink }}>
+                  {banner?.title ?? "Unlock Pro Terms"}
+                </Text>
+                <Text style={{ fontSize: 13, color: t.ink3, lineHeight: 18, marginTop: 3 }}>
+                  The app is available now. Credit-based terms unlock after authorization and a soft pull.
+                </Text>
+              </View>
             </View>
-          </View>
-          <Text style={{ fontSize: 22, fontWeight: "800", color: t.ink, textAlign: "center", marginBottom: 10 }}>
-            {banner?.title ?? "Unlock Your Funding Workspace"}
-          </Text>
-          <Text style={{ fontSize: 14, color: t.ink2, textAlign: "center", lineHeight: 20, marginBottom: 22 }}>
-            {banner?.body ?? "Run a soft credit pull to unlock loan offers. No score impact."}
-          </Text>
-          <Pressable
-            onPress={() => router.push("/credit-pull")}
-            style={({ pressed }) => ({
-              backgroundColor: t.brand,
-              paddingVertical: 14, paddingHorizontal: 22,
-              borderRadius: 11, alignItems: "center",
-              opacity: pressed ? 0.85 : 1,
-            })}
-          >
-            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>
-              {banner?.ctaLabel ?? "Unlock My Funding Workspace"}
+            <Text style={{ fontSize: 14, color: t.ink2, lineHeight: 20 }}>
+              {banner?.body ?? "Run a soft credit pull to unlock loan offers. No score impact."}
             </Text>
-          </Pressable>
-        </Card>
-      </View>
-    </SafeAreaView>
+            <View style={{ gap: 9 }}>
+              <Pressable
+                onPress={() => router.push("/credit-pull")}
+                style={({ pressed }) => ({
+                  backgroundColor: t.brand,
+                  paddingVertical: 14,
+                  paddingHorizontal: 22,
+                  borderRadius: 12,
+                  alignItems: "center",
+                  opacity: pressed ? 0.85 : 1,
+                })}
+              >
+                <Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>
+                  {banner?.ctaLabel ?? "Unlock Pro Terms · Soft Pull"}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setDismissed(true)}
+                style={({ pressed }) => ({
+                  paddingVertical: 13,
+                  borderRadius: 12,
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: t.line,
+                  backgroundColor: t.surface,
+                  opacity: pressed ? 0.85 : 1,
+                })}
+              >
+                <Text style={{ color: t.ink, fontWeight: "800", fontSize: 14 }}>Do later</Text>
+              </Pressable>
+            </View>
+          </Card>
+        </View>
+      </Modal>
+    </>
   );
 }
