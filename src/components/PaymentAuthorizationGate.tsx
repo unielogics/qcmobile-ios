@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { PanResponder, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Platform, Pressable, Text, TextInput, View } from "react-native";
 import { CardField, confirmSetupIntent, initStripe } from "@stripe/stripe-react-native";
-import Svg, { Path } from "react-native-svg";
 import { useTheme } from "@/design-system/ThemeProvider";
 import { Card, QButton, SectionLabel } from "@/design-system/primitives";
 import { GoogleAddressInput } from "@/components/property/GoogleAddressInput";
+import { SignatureCaptureModal, SignaturePreview } from "@/components/SignatureCaptureModal";
 import {
   useCompletePaymentAuthorization,
   useCreateSetupIntent,
@@ -57,11 +57,9 @@ function applyAddressToBilling(prev: BillingAddress, address: AddressParts): Bil
 export function PaymentAuthorizationGate({
   onComplete,
   onStepChange,
-  onSignatureActiveChange,
 }: {
   onComplete?: () => void;
   onStepChange?: (step: AuthorizationStep) => void;
-  onSignatureActiveChange?: (active: boolean) => void;
 } = {}) {
   const { t, isDark } = useTheme();
   const { data: user } = useCurrentUser();
@@ -79,7 +77,7 @@ export function PaymentAuthorizationGate({
   const [paymentConsent, setPaymentConsent] = useState(false);
   const [cardComplete, setCardComplete] = useState(false);
   const [paths, setPaths] = useState<string[]>([]);
-  const currentPath = useRef("");
+  const [signatureOpen, setSignatureOpen] = useState(false);
   const startAttempted = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,36 +102,6 @@ export function PaymentAuthorizationGate({
     }));
     if (!typedName && user?.name) setTypedName(user.name);
   }, [client?.address, client?.city, client?.email, client?.name, typedName, user?.email, user?.name]);
-
-  const signatureResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponderCapture: () => true,
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponderCapture: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (event) => {
-          onSignatureActiveChange?.(true);
-          const { locationX, locationY } = event.nativeEvent;
-          currentPath.current = `M ${Math.round(locationX)} ${Math.round(locationY)}`;
-          setPaths((prev) => [...prev, currentPath.current]);
-        },
-        onPanResponderMove: (event) => {
-          const { locationX, locationY } = event.nativeEvent;
-          currentPath.current += ` L ${Math.round(locationX)} ${Math.round(locationY)}`;
-          setPaths((prev) => [...prev.slice(0, -1), currentPath.current]);
-        },
-        onPanResponderRelease: () => {
-          onSignatureActiveChange?.(false);
-        },
-        onPanResponderTerminate: () => {
-          onSignatureActiveChange?.(false);
-        },
-        onPanResponderTerminationRequest: () => false,
-        onShouldBlockNativeResponder: () => true,
-      }),
-    [onSignatureActiveChange],
-  );
 
   const begin = async () => {
     setError(null);
@@ -313,19 +281,18 @@ export function PaymentAuthorizationGate({
           <Card pad={18} style={{ gap: 10 }}>
             <SectionLabel>Signer</SectionLabel>
             <Field label="Legal name" value={typedName} onChangeText={setTypedName} placeholder="Full legal name" />
-            <Text style={{ color: t.ink4, fontSize: 12, fontWeight: "700" }}>Draw signature</Text>
-            <View
-              {...signatureResponder.panHandlers}
-              collapsable={false}
-              style={{ height: 150, borderRadius: 14, borderWidth: 1, borderColor: t.line, backgroundColor: isDark ? "#080A10" : "#F8FAFC", overflow: "hidden" }}
-            >
-              <Svg width="100%" height="100%" pointerEvents="none">
-                {paths.map((path, index) => (
-                  <Path key={`${index}-${path.length}`} d={path} stroke={t.ink} strokeWidth={3} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                ))}
-              </Svg>
-            </View>
-            <QButton label="Clear signature" variant="secondary" onPress={() => setPaths([])} />
+            <Text style={{ color: t.ink4, fontSize: 12, fontWeight: "700" }}>Signature</Text>
+            {paths.length > 0 ? (
+              <SignaturePreview paths={paths} />
+            ) : (
+              <View style={{ borderRadius: 14, borderWidth: 1, borderColor: t.line, backgroundColor: isDark ? "#080A10" : "#F8FAFC", padding: 16, gap: 6 }}>
+                <Text style={{ color: t.ink, fontSize: 14, fontWeight: "800" }}>No signature captured yet</Text>
+                <Text style={{ color: t.ink3, fontSize: 12.5, lineHeight: 18 }}>
+                  Open the full-screen signature pad to sign without the page moving while you draw.
+                </Text>
+              </View>
+            )}
+            <QButton label={paths.length > 0 ? "Edit signature" : "Open signature pad"} onPress={() => setSignatureOpen(true)} />
           </Card>
 
           {error ? (
@@ -389,6 +356,17 @@ export function PaymentAuthorizationGate({
           <QButton label="Back to billing" variant="secondary" onPress={() => setStep("billing")} />
         </>
       ) : null}
+
+      <SignatureCaptureModal
+        visible={signatureOpen}
+        initialPaths={paths}
+        signerName={typedName}
+        onCancel={() => setSignatureOpen(false)}
+        onSave={(nextPaths) => {
+          setPaths(nextPaths);
+          setSignatureOpen(false);
+        }}
+      />
     </View>
   );
 }
