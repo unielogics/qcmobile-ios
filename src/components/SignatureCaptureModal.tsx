@@ -28,7 +28,7 @@ export function SignaturePreview({
         overflow: "hidden",
       }}
     >
-      <Svg width="100%" height="100%" viewBox={SIGNATURE_VIEWBOX} pointerEvents="none">
+      <Svg width="100%" height="100%" viewBox={SIGNATURE_VIEWBOX} preserveAspectRatio="none" pointerEvents="none">
         {paths.map((path, index) => (
           <Path
             key={`${index}-${path.length}`}
@@ -63,6 +63,7 @@ export function SignatureCaptureModal({
   const [paths, setPaths] = useState<string[]>(initialPaths);
   const canvasSize = useRef({ width: 1, height: 1 });
   const currentPath = useRef("");
+  const canvasHeight = Math.max(260, Math.min(360, width * 0.74));
 
   useEffect(() => {
     if (visible) {
@@ -136,9 +137,27 @@ export function SignatureCaptureModal({
                 Sign authorization
               </Text>
               <Text style={{ color: t.ink3, fontSize: 12.5, lineHeight: 17, marginTop: 2 }}>
-                Use your finger to draw inside the box. This full-screen pad will not scroll while signing.
+                Sign left to right across the full width. The page will not scroll while this pad is open.
               </Text>
             </View>
+          </View>
+
+          <View
+            style={{
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: t.line,
+              backgroundColor: t.surface,
+              padding: 12,
+              gap: 6,
+            }}
+          >
+            <Text style={{ color: t.ink, fontSize: 14, fontWeight: "900" }}>
+              Orientation
+            </Text>
+            <Text style={{ color: t.ink2, fontSize: 12.5, lineHeight: 18 }}>
+              Keep the phone upright and write your signature from the left side of the box to the right side. Use the entire pad.
+            </Text>
           </View>
 
           <View
@@ -151,8 +170,7 @@ export function SignatureCaptureModal({
               };
             }}
             style={{
-              flex: 1,
-              minHeight: Math.max(320, Math.min(520, height - 260)),
+              height: canvasHeight,
               borderRadius: 20,
               borderWidth: 1,
               borderColor: t.lineStrong,
@@ -160,7 +178,7 @@ export function SignatureCaptureModal({
               overflow: "hidden",
             }}
           >
-            <Svg width="100%" height="100%" viewBox={SIGNATURE_VIEWBOX} pointerEvents="none">
+            <Svg width="100%" height="100%" viewBox={SIGNATURE_VIEWBOX} preserveAspectRatio="none" pointerEvents="none">
               {paths.map((path, index) => (
                 <Path
                   key={`${index}-${path.length}`}
@@ -173,6 +191,32 @@ export function SignatureCaptureModal({
                 />
               ))}
             </Svg>
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                left: 22,
+                right: 22,
+                top: Math.round(canvasHeight * 0.6),
+                height: 1,
+                backgroundColor: isDark ? "rgba(255,255,255,0.18)" : "rgba(11,29,58,0.18)",
+              }}
+            />
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                left: 18,
+                right: 18,
+                bottom: 16,
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: t.ink4, fontSize: 11, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" }}>Start here</Text>
+              <Text style={{ color: t.ink4, fontSize: 11, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" }}>Finish here</Text>
+            </View>
             {paths.length === 0 ? (
               <View
                 pointerEvents="none"
@@ -190,7 +234,8 @@ export function SignatureCaptureModal({
                   justifyContent: "center",
                 }}
               >
-                <Text style={{ color: t.ink4, fontSize: 15, fontWeight: "800" }}>Draw here</Text>
+                <Text style={{ color: t.ink, fontSize: 16, fontWeight: "900" }}>Draw signature here</Text>
+                <Text style={{ color: t.ink4, fontSize: 12.5, fontWeight: "700", marginTop: 6 }}>Use the full width of the pad</Text>
               </View>
             ) : null}
           </View>
@@ -200,7 +245,7 @@ export function SignatureCaptureModal({
               Signer: <Text style={{ color: t.ink, fontWeight: "800" }}>{signerName.trim() || "Legal name required"}</Text>
             </Text>
             <Text style={{ color: t.ink4, fontSize: 11.5, lineHeight: 16 }}>
-              Screen {Math.round(width)} x {Math.round(height)}. Signature is saved as an encrypted authorization record after card setup is complete.
+              Signature pad {Math.round(width)}px wide. Signature is saved as an encrypted authorization record after card setup is complete.
             </Text>
           </View>
 
