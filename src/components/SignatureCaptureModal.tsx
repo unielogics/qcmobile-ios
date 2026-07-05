@@ -8,6 +8,7 @@ import { Icon } from "@/design-system/Icon";
 export const SIGNATURE_VIEWBOX_WIDTH = 1000;
 export const SIGNATURE_VIEWBOX_HEIGHT = 400;
 export const SIGNATURE_VIEWBOX = `0 0 ${SIGNATURE_VIEWBOX_WIDTH} ${SIGNATURE_VIEWBOX_HEIGHT}`;
+const SIGNATURE_STROKE_WIDTH = 7.5;
 
 export function SignaturePreview({
   paths,
@@ -34,7 +35,7 @@ export function SignaturePreview({
             key={`${index}-${path.length}`}
             d={path}
             stroke={t.ink}
-            strokeWidth={10}
+            strokeWidth={SIGNATURE_STROKE_WIDTH}
             fill="none"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -63,12 +64,14 @@ export function SignatureCaptureModal({
   const [paths, setPaths] = useState<string[]>(initialPaths);
   const canvasSize = useRef({ width: 1, height: 1 });
   const currentPath = useRef("");
+  const isDrawing = useRef(false);
   const canvasHeight = Math.max(260, Math.min(360, width * 0.74));
 
   useEffect(() => {
     if (visible) {
       setPaths(initialPaths);
       currentPath.current = "";
+      isDrawing.current = false;
     }
   }, [initialPaths, visible]);
 
@@ -89,19 +92,23 @@ export function SignatureCaptureModal({
         onPanResponderGrant: (event) => {
           const { locationX, locationY } = event.nativeEvent;
           const point = pointFromEvent(locationX, locationY);
+          isDrawing.current = true;
           currentPath.current = `M ${point.x} ${point.y}`;
           setPaths((prev) => [...prev, currentPath.current]);
         },
         onPanResponderMove: (event) => {
+          if (!isDrawing.current || !currentPath.current) return;
           const { locationX, locationY } = event.nativeEvent;
           const point = pointFromEvent(locationX, locationY);
           currentPath.current += ` L ${point.x} ${point.y}`;
           setPaths((prev) => [...prev.slice(0, -1), currentPath.current]);
         },
         onPanResponderRelease: () => {
+          isDrawing.current = false;
           currentPath.current = "";
         },
         onPanResponderTerminate: () => {
+          isDrawing.current = false;
           currentPath.current = "";
         },
         onPanResponderTerminationRequest: () => false,
@@ -184,7 +191,7 @@ export function SignatureCaptureModal({
                   key={`${index}-${path.length}`}
                   d={path}
                   stroke={t.ink}
-                  strokeWidth={10}
+                  strokeWidth={SIGNATURE_STROKE_WIDTH}
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
