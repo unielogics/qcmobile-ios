@@ -57,9 +57,11 @@ function applyAddressToBilling(prev: BillingAddress, address: AddressParts): Bil
 export function PaymentAuthorizationGate({
   onComplete,
   onStepChange,
+  onSignatureActiveChange,
 }: {
   onComplete?: () => void;
   onStepChange?: (step: AuthorizationStep) => void;
+  onSignatureActiveChange?: (active: boolean) => void;
 } = {}) {
   const { t, isDark } = useTheme();
   const { data: user } = useCurrentUser();
@@ -106,9 +108,12 @@ export function PaymentAuthorizationGate({
   const signatureResponder = useMemo(
     () =>
       PanResponder.create({
+        onStartShouldSetPanResponderCapture: () => true,
         onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (event) => {
+          onSignatureActiveChange?.(true);
           const { locationX, locationY } = event.nativeEvent;
           currentPath.current = `M ${Math.round(locationX)} ${Math.round(locationY)}`;
           setPaths((prev) => [...prev, currentPath.current]);
@@ -118,8 +123,16 @@ export function PaymentAuthorizationGate({
           currentPath.current += ` L ${Math.round(locationX)} ${Math.round(locationY)}`;
           setPaths((prev) => [...prev.slice(0, -1), currentPath.current]);
         },
+        onPanResponderRelease: () => {
+          onSignatureActiveChange?.(false);
+        },
+        onPanResponderTerminate: () => {
+          onSignatureActiveChange?.(false);
+        },
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
       }),
-    [],
+    [onSignatureActiveChange],
   );
 
   const begin = async () => {
@@ -303,9 +316,10 @@ export function PaymentAuthorizationGate({
             <Text style={{ color: t.ink4, fontSize: 12, fontWeight: "700" }}>Draw signature</Text>
             <View
               {...signatureResponder.panHandlers}
+              collapsable={false}
               style={{ height: 150, borderRadius: 14, borderWidth: 1, borderColor: t.line, backgroundColor: isDark ? "#080A10" : "#F8FAFC", overflow: "hidden" }}
             >
-              <Svg width="100%" height="100%">
+              <Svg width="100%" height="100%" pointerEvents="none">
                 {paths.map((path, index) => (
                   <Path key={`${index}-${path.length}`} d={path} stroke={t.ink} strokeWidth={3} fill="none" strokeLinecap="round" strokeLinejoin="round" />
                 ))}

@@ -185,6 +185,7 @@ export default function CreditPull() {
   const [stage, setStage] = useState<Stage>("intro");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(EMPTY_FORM);
+  const [signatureDrawing, setSignatureDrawing] = useState(false);
   // SSN starts hidden; it's only required if the bureau can't match
   // on name+address+DOB alone. Backend signals that with a structured
   // 422 carrying `code: "no_hit_provide_ssn"`.
@@ -312,7 +313,8 @@ export default function CreditPull() {
         <ScrollView
           contentContainerStyle={{ padding: 16, paddingBottom: 80, gap: 16 }}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
+          keyboardDismissMode={signatureDrawing ? "none" : "interactive"}
+          scrollEnabled={!signatureDrawing}
           showsVerticalScrollIndicator={false}
         >
           <Pressable onPress={() => router.back()} hitSlop={12}>
@@ -416,6 +418,7 @@ export default function CreditPull() {
             <PaymentAuthorizationGate
               onComplete={handlePaymentComplete}
               onStepChange={handleAuthorizationStepChange}
+              onSignatureActiveChange={setSignatureDrawing}
             />
           )}
 
