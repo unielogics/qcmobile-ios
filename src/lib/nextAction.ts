@@ -33,8 +33,8 @@ export function deriveNextAction(input: DeriveNextActionInput): NextAction {
     return {
       kind: "credit",
       title: eligibility.banner?.title ?? "Verify your credit",
-      body: eligibility.banner?.body ?? "Run a soft credit pull to unlock loan offers.",
-      ctaLabel: eligibility.banner?.ctaLabel ?? "Start Soft Pull",
+      body: eligibility.banner?.body ?? "Complete Credit & Pre-Authorization to unlock loan offers.",
+      ctaLabel: eligibility.banner?.ctaLabel ?? "Start Credit & Pre-Authorization",
       route: "/credit-pull",
     };
   }

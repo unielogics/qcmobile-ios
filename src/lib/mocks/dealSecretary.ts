@@ -49,7 +49,7 @@ export function mockDealSecretaryView(loanId: string): DSDealSecretaryView {
       mockTask({ requirement_key: "insurance_quote", label: "Confirm insurance quote", category: "insurance", owner_type: "human" }),
     ],
     right: [
-      mockTask({ requirement_key: "credit_pull", label: "Run soft credit pull", category: "credit", owner_type: "ai" }),
+      mockTask({ requirement_key: "credit_pull", label: "Complete Credit & Pre-Authorization", category: "credit", owner_type: "ai" }),
       mockTask({ requirement_key: "doc_chase", label: "Chase outstanding bank statements", category: "financials", owner_type: "ai" }),
     ],
   };

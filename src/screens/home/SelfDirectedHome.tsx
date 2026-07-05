@@ -437,7 +437,7 @@ function ProTermsCard({ credit, onPress }: { credit: { fico: number | null } | n
       >
         <Icon name={unlocked ? "refresh" : "lock"} size={14} color={unlocked ? t.ink : (isDark ? "#06070B" : "#fff")} />
         <Text style={{ fontSize: 13, fontWeight: "700", color: unlocked ? t.ink : (isDark ? "#06070B" : "#fff") }}>
-          {unlocked ? "Re-run pull" : "Unlock Pro Terms · Soft Pull"}
+          {unlocked ? "Re-run credit check" : "Start Credit & Pre-Authorization"}
         </Text>
       </Pressable>
     </Card>

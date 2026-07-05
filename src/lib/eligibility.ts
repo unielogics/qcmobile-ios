@@ -70,8 +70,8 @@ export function computeEligibility(input: EligibilityInputs): EligibilityResult 
       banner: {
         kind: "credit-expired",
         title: "Credit verification expired",
-        body: "Soft pulls are valid for 90 days. Refresh your credit to unlock current rates.",
-        ctaLabel: "Refresh Credit · Soft Pull",
+        body: "Soft pulls are valid for 90 days. Complete Credit & Pre-Authorization to refresh current rates.",
+        ctaLabel: "Refresh Credit & Pre-Authorization",
         ctaTarget: "credit-pull",
       },
     };
@@ -87,8 +87,8 @@ export function computeEligibility(input: EligibilityInputs): EligibilityResult 
       banner: {
         kind: "no-credit",
         title: "Credit not verified",
-        body: "Run a soft credit pull to unlock loan offers. No score impact.",
-        ctaLabel: "Unlock Pro Terms · Soft Pull",
+        body: "Complete Credit & Pre-Authorization to unlock loan offers. The soft pull has no score impact.",
+        ctaLabel: "Start Credit & Pre-Authorization",
         ctaTarget: "credit-pull",
       },
     };

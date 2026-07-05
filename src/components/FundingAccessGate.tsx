@@ -42,7 +42,7 @@ export function FundingAccessGate({ children }: { children: ReactNode }) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 20, fontWeight: "900", color: t.ink }}>
-                  {banner?.title ?? "Unlock Pro Terms"}
+                  {banner?.title ?? "Credit & Pre-Authorization"}
                 </Text>
                 <Text style={{ fontSize: 13, color: t.ink3, lineHeight: 18, marginTop: 3 }}>
                   The app is available now. Credit-based terms unlock after authorization and a soft pull.
@@ -50,7 +50,7 @@ export function FundingAccessGate({ children }: { children: ReactNode }) {
               </View>
             </View>
             <Text style={{ fontSize: 14, color: t.ink2, lineHeight: 20 }}>
-              {banner?.body ?? "Run a soft credit pull to unlock loan offers. No score impact."}
+              {banner?.body ?? "Complete Credit & Pre-Authorization to unlock loan offers. The soft pull has no score impact."}
             </Text>
             <View style={{ gap: 9 }}>
               <Pressable
@@ -65,7 +65,7 @@ export function FundingAccessGate({ children }: { children: ReactNode }) {
                 })}
               >
                 <Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>
-                  {banner?.ctaLabel ?? "Unlock Pro Terms · Soft Pull"}
+                  {banner?.ctaLabel ?? "Start Credit & Pre-Authorization"}
                 </Text>
               </Pressable>
               <Pressable

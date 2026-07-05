@@ -197,7 +197,7 @@ export function useCurrentCredit(clientId: string | null | undefined) {
 
 // Backed by /clients/me. Returns the calling user's linked Client record
 // (phone, address, city, tier, etc.). Used to pre-fill borrower-facing
-// flows like the soft credit pull. 404 is expected for operator users
+// flows like Credit & Pre-Authorization. 404 is expected for operator users
 // with no client linkage — don't retry.
 export function useMyClient() {
   const fetcher = useAuthedFetch();

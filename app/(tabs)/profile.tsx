@@ -160,7 +160,7 @@ export default function Profile() {
                     }
                     style={{ flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: t.surface, borderWidth: 1, borderColor: t.lineStrong, alignItems: "center" }}
                   >
-                    <Text style={{ fontSize: 12.5, fontWeight: "600", color: t.ink }}>Re-Run Soft Pull</Text>
+                    <Text style={{ fontSize: 12.5, fontWeight: "600", color: t.ink }}>Re-run Credit Check</Text>
                   </Pressable>
                   <Pressable
                     style={{ flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: t.danger + "40", alignItems: "center" }}
@@ -192,7 +192,7 @@ export default function Profile() {
                   })}
                 >
                   <Icon name="unlock" size={14} color={isDark ? "#06070B" : "#fff"} />
-                  <Text style={{ color: isDark ? "#06070B" : "#fff", fontSize: 13, fontWeight: "700" }}>Start Soft Pull</Text>
+                  <Text style={{ color: isDark ? "#06070B" : "#fff", fontSize: 13, fontWeight: "700" }}>Start Credit & Pre-Authorization</Text>
                 </Pressable>
               </Card>
             )}
