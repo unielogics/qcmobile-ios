@@ -61,9 +61,9 @@
       "apiUrl": "https://api.qualifiedcommercial.com",
       "router": {},
       "eas": {
-        "projectId": "4a52d3d1-32fc-4d95-a143-78320f7c236f"
+        "projectId": "be1cda04-555c-4f51-b293-a22dcecb07a7"
       }
     },
-    "owner": "unielogics"
+    "owner": "qualifiedcommercial"
   }
 }
