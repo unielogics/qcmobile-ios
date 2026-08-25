@@ -420,7 +420,7 @@ function FreeCalculation({ clients, loans }: { clients: Client[]; loans: Loan[] 
             setPropertySnapshotId(null);
             setPropertyFlash(null);
           }}
-          helperText="RentCast, Google, and FEMA checks run automatically after a complete address is selected or entered."
+          helperText="Property and FEMA checks run automatically after a complete address is selected or entered."
         />
         <View style={{ marginTop: 8, marginBottom: 8 }}>
           {propertyLookup.isPending ? (
@@ -881,7 +881,7 @@ function ClientEstimate({
             setPropertySnapshotId(null);
             setPropertyFlash(null);
           }}
-          helperText="RentCast, Google, and FEMA checks run automatically after a complete address is selected or entered."
+          helperText="Property and FEMA checks run automatically after a complete address is selected or entered."
         />
         <View style={{ marginTop: 8, marginBottom: 8 }}>
           {propertyLookup.isPending ? (

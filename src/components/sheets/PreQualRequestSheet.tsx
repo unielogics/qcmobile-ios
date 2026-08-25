@@ -347,7 +347,7 @@ export function PreQualRequestSheet({
                     setAddress(formatAddressParts(next));
                   }}
                   label="Target property address"
-                  helperText="Select the property from Google when available. Manual entry keeps state as a dropdown for consistency."
+                  helperText="Select a verified property result when available. Manual entry keeps state as a dropdown for consistency."
                 />
 
                 {/* Purchase + loan */}

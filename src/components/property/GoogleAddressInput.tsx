@@ -36,12 +36,16 @@ function hasSplitAddress(parts: AddressParts | null | undefined) {
 function normalize(parts: AddressParts | null | undefined): AddressParts {
   return {
     street: clean(parts?.street) || null,
+    line2: clean(parts?.line2) || null,
     city: clean(parts?.city) || null,
     state: clean(parts?.state) || null,
     zip: clean(parts?.zip) || null,
+    country_code: clean(parts?.country_code) || "US",
     full: clean(parts?.full) || null,
     latitude: parts?.latitude ?? null,
     longitude: parts?.longitude ?? null,
+    provider: parts?.provider ?? null,
+    provider_place: parts?.provider_place ?? null,
   };
 }
 
@@ -59,13 +63,13 @@ export function GoogleAddressInput({
   onChange,
   onResolved,
   label = "Property address",
-  helperText = "Search Google and select the property, or use manual entry if the address is not listed.",
+  helperText = "Search verified U.S. address data, or use manual entry if the address is not listed.",
   showZip = true,
   disabled = false,
 }: {
   value: AddressParts | null;
   onChange: (next: AddressParts) => void;
-  onResolved?: (next: AddressParts, googlePlace: Record<string, unknown> | null) => void;
+  onResolved?: (next: AddressParts, providerPlace: Record<string, unknown> | null) => void;
   label?: string;
   helperText?: string;
   showZip?: boolean;
@@ -109,6 +113,8 @@ export function GoogleAddressInput({
       full: null,
       latitude: null,
       longitude: null,
+      provider: "manual",
+      provider_place: null,
     });
     onChange(next);
     setQuery(formatAddressParts(next));
@@ -126,9 +132,14 @@ export function GoogleAddressInput({
     const resolved = await resolveAddress.mutateAsync({ place_id: placeId, session_token: sessionToken });
     const next = normalize(resolved.address);
     const formatted = formatAddressParts(next, fallbackText);
-    const withFull = { ...next, full: next.full || formatted };
+    const withFull = {
+      ...next,
+      full: next.full || formatted,
+      provider: resolved.provider,
+      provider_place: resolved.provider_place,
+    };
     onChange(withFull);
-    onResolved?.(withFull, resolved.google_place);
+    onResolved?.(withFull, resolved.provider_place);
     setQuery(formatted);
     setManualOpen(true);
     setSuggestionsOpen(false);
@@ -200,7 +211,7 @@ export function GoogleAddressInput({
 
       {showManualFallback ? (
         <View style={{ borderWidth: 1, borderColor: t.line, borderRadius: 12, backgroundColor: t.surface, padding: 12 }}>
-          <Text style={{ fontSize: 12.5, color: t.ink3, lineHeight: 18 }}>No Google match. Use manual entry for this property.</Text>
+          <Text style={{ fontSize: 12.5, color: t.ink3, lineHeight: 18 }}>No address match. Use manual entry for this property.</Text>
           <Pressable onPress={openManual} style={{ marginTop: 8, alignSelf: "flex-start" }}>
             <Text style={{ fontSize: 12.5, fontWeight: "800", color: t.brand }}>Enter address manually</Text>
           </Pressable>
@@ -210,10 +221,10 @@ export function GoogleAddressInput({
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
         <Pill bg={value?.latitude && value?.longitude ? t.profitBg : t.chip} color={value?.latitude && value?.longitude ? t.profit : t.ink3}>
           {value?.latitude && value?.longitude
-            ? "Google address resolved"
+            ? "Address resolved"
             : hasSplitAddress(value)
-              ? "Manual address"
-              : "Search Google or enter manually"}
+              ? "Manual · Unverified"
+              : "Search or enter manually"}
         </Pill>
         {!manualOpen ? (
           <Pressable onPress={openManual}>

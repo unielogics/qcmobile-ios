@@ -756,26 +756,34 @@ export interface PrequalSellerOutcome {
 
 export type AnalysisProduct = "dscr_purchase" | "dscr_refi" | "fix_flip";
 export type AnalysisSource = "deal_analyzer" | "simulator" | "loan_recalc";
+export type AddressProvider = "google" | "geoapify";
 
 export interface AddressParts {
   street?: string | null;
+  line2?: string | null;
   city?: string | null;
   state?: string | null;
   zip?: string | null;
+  country_code?: string | null;
   full?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  provider?: AddressProvider | "manual" | null;
+  provider_place?: Record<string, unknown> | null;
 }
 
 export interface AddressSuggestion {
   place_id: string;
   text: string;
   secondary_text: string | null;
+  provider: AddressProvider;
 }
 
 export interface AddressResolveResponse {
   address: AddressParts;
   google_place: Record<string, unknown> | null;
+  provider: AddressProvider;
+  provider_place: Record<string, unknown> | null;
 }
 
 export interface PropertyIntelligenceSnapshot {

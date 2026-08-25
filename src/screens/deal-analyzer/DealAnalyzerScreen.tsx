@@ -523,7 +523,7 @@ export function DealAnalyzerScreen() {
                   setPropertySnapshotId(null);
                   setPropertyFlash(null);
                 }}
-                helperText="RentCast, Google, and FEMA checks run automatically after a complete address is selected or entered."
+                helperText="Property and FEMA checks run automatically after a complete address is selected or entered."
               />
               <View style={{ marginTop: 10 }}>
                 {propertyLookup.isPending ? (

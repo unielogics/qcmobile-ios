@@ -312,7 +312,7 @@ export function PaymentAuthorizationGate({
               value={billingToAddressParts(billing)}
               onChange={(next) => setBilling((p) => applyAddressToBilling(p, next))}
               label="Billing address"
-              helperText="Start typing and select the Google result. Use manual entry only if the address is not listed."
+              helperText="Start typing and select a verified result. Use manual entry only if the address is not listed."
             />
             <Field label="Unit optional" value={billing.line2 ?? ""} onChangeText={(v) => setBilling((p) => ({ ...p, line2: v }))} />
           </Card>
