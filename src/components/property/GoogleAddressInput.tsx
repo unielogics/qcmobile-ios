@@ -129,7 +129,11 @@ export function GoogleAddressInput({
   };
 
   const selectSuggestion = async (placeId: string, fallbackText: string) => {
-    const resolved = await resolveAddress.mutateAsync({ place_id: placeId, session_token: sessionToken });
+    const resolved = await resolveAddress.mutateAsync({
+      place_id: placeId,
+      address: fallbackText,
+      session_token: sessionToken,
+    });
     const next = normalize(resolved.address);
     const formatted = formatAddressParts(next, fallbackText);
     const withFull = {
