@@ -57,6 +57,14 @@ import type {
 } from "@/lib/types";
 import type { ClientStage, LoanPurpose } from "@/lib/enums.generated";
 
+const LIVE_MESSAGE_QUERY_OPTIONS = {
+  staleTime: 0,
+  refetchInterval: 3_000,
+  refetchIntervalInBackground: true,
+  refetchOnWindowFocus: "always",
+  refetchOnReconnect: "always",
+} as const;
+
 class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
@@ -528,11 +536,7 @@ export function useAIChatThreads() {
   return useQuery({
     queryKey: ["aiChatThreads", key],
     queryFn: () => fetcher<AIChatThread[]>("/ai/chat/threads"),
-    // Poll every 15s so the chat icon's unread dot reflects new
-    // system messages (kickoff opener, anchor narration, doc-reminder
-    // tier-1) without waiting for a manual refresh.
-    refetchInterval: 15_000,
-    refetchOnWindowFocus: true,
+    ...LIVE_MESSAGE_QUERY_OPTIONS,
   });
 }
 
@@ -543,11 +547,7 @@ export function useAIChatThread(threadId: string | null | undefined) {
     queryKey: ["aiChatThread", threadId, key],
     queryFn: () => fetcher<AIChatThreadDetail>(`/ai/chat/threads/${threadId}`),
     enabled: !!threadId,
-    // While the thread is open, poll for new messages so the AI's
-    // anchor narration ("Got your bank statements!") shows up
-    // without a manual close/reopen.
-    refetchInterval: 15_000,
-    refetchOnWindowFocus: true,
+    ...LIVE_MESSAGE_QUERY_OPTIONS,
   });
 }
 
@@ -1584,7 +1584,7 @@ export function useLoanChat(loanId: string | null | undefined) {
     // EAS env var was missing. End result: 'I typed but nothing shows'.
     queryFn: () => fetcher<LoanChatMessage[]>(`/loans/${loanId}/chat`),
     enabled: !!loanId,
-    refetchInterval: 15_000,
+    ...LIVE_MESSAGE_QUERY_OPTIONS,
   });
 }
 
@@ -1836,7 +1836,7 @@ export function useDealAgentChat(dealId: string | null | undefined) {
       return fetcher<LoanChatMessage[]>(`/deals/${dealId}/chat`);
     },
     enabled: !!dealId,
-    refetchInterval: 15_000,
+    ...LIVE_MESSAGE_QUERY_OPTIONS,
   });
 }
 
@@ -2221,6 +2221,7 @@ export function useLenderMessages(loanId: string | null | undefined) {
       return fetcher<LenderMessage[]>(`/loans/${loanId}/lender/messages`);
     },
     enabled: !!loanId,
+    ...LIVE_MESSAGE_QUERY_OPTIONS,
   });
 }
 

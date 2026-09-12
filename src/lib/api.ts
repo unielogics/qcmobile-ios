@@ -22,9 +22,11 @@ export interface ApiOptions extends RequestInit {
 }
 
 export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
-  const { devUser, authToken, headers, ...rest } = opts;
+  const { devUser, authToken, headers, cache, ...rest } = opts;
+  const method = String(rest.method ?? "GET").toUpperCase();
   const res = await fetch(`${API_URL}/api/v1${path}`, {
     ...rest,
+    cache: cache ?? (method === "GET" ? "no-store" : undefined),
     headers: {
       "Content-Type": "application/json",
       ...(devUser ? { "X-Dev-User": devUser } : {}),
