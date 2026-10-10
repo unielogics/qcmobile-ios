@@ -21,6 +21,7 @@ import { useTheme } from "@/design-system/ThemeProvider";
 import { Card, Pill, SectionLabel } from "@/design-system/primitives";
 import { Icon, type IconName } from "@/design-system/Icon";
 import { DocumentRequestList } from "@/components/DocumentRequestList";
+import { CapitalReadinessCard } from "@/components/CapitalReadinessCard";
 import { DealHealthPill } from "@/components/agent/DealHealthPill";
 import { PauseBanner } from "@/components/loan/PauseBanner";
 import { LoanChatThread } from "@/components/loan/LoanChatThread";
@@ -200,6 +201,9 @@ export default function AgentLoanRoute() {
       <View style={{ flex: 1 }}>
         {tab === "snapshot" ? (
           <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: bottomPad }}>
+            {loan.application_profile_id ? (
+              <CapitalReadinessCard profileId={loan.application_profile_id} uiLocale={me?.ui_locale === "es" ? "es" : "en"} />
+            ) : null}
             <AgentFundingMirror loan={loan} docs={docs} activity={activity} />
           </ScrollView>
         ) : tab === "docs" ? (

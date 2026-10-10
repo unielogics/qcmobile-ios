@@ -33,6 +33,7 @@ import { LoanChatThread } from "@/components/loan/LoanChatThread";
 import { PauseBanner } from "@/components/loan/PauseBanner";
 import { KeyboardAware } from "@/components/KeyboardAware";
 import { Fab } from "@/components/Fab";
+import { CapitalReadinessCard } from "@/components/CapitalReadinessCard";
 
 const STAGE_KEYS = ["prequalified", "collecting_docs", "lender_connected", "processing", "closing", "funded"] as const;
 const PIPELINE_STAGES = ["Prequalified", "Processing", "Underwriting", "Closing", "Funded"];
@@ -145,7 +146,9 @@ export default function LoanFile() {
         </View>
       </View>
 
-      {tab === "todo" && <ToDoPane loanId={loan.id} />}
+      {tab === "todo" && (
+        <ToDoPane loanId={loan.id} applicationProfileId={loan.application_profile_id} />
+      )}
       {tab === "chat" && <ChatPane loanId={loan.id} dealId={loan.deal_id} />}
       {tab === "docs" && <DocsPane loanId={loan.id} />}
       {tab === "sim" && <LoanSimulator loan={loan} />}
@@ -153,7 +156,13 @@ export default function LoanFile() {
   );
 }
 
-function ToDoPane({ loanId }: { loanId: string }) {
+function ToDoPane({
+  loanId,
+  applicationProfileId,
+}: {
+  loanId: string;
+  applicationProfileId: string | null;
+}) {
   const { t } = useTheme();
   const router = useRouter();
   const [filter, setFilter] = useState<"pending" | "completed" | "all">("pending");
@@ -197,6 +206,9 @@ function ToDoPane({ loanId }: { loanId: string }) {
         </View>
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 96, gap: 14 }} showsVerticalScrollIndicator={false}>
+        {applicationProfileId ? (
+          <CapitalReadinessCard profileId={applicationProfileId} />
+        ) : null}
         {isLoading ? <Text style={{ color: t.ink3, fontSize: 13 }}>Loading your to-do…</Text> : null}
         {!isLoading && items.length === 0 ? (
           <Card pad={16}>

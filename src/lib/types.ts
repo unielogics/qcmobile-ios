@@ -14,6 +14,7 @@ export interface User {
   email: string;
   name: string;
   role: Role;
+  ui_locale?: "en" | "es";
 }
 
 export interface Client {
@@ -148,6 +149,9 @@ export interface Deal {
 
 export interface Loan {
   id: string;
+  // Read-only mapping to the canonical application file. Null means no
+  // ApplicationProfile has been created for this loan yet.
+  application_profile_id: string | null;
   deal_id: string;
   // Set when this loan was promoted from a deal (Phase 3). Used by
   // the chat surfaces to look up the (A) Agent deal-chat that
