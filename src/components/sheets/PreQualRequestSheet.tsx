@@ -7,6 +7,7 @@
 // haven't formed the entity yet.
 
 import { useEffect, useState } from "react";
+import { MarketingEmailChoice } from "@/components/MarketingEmailChoice";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -80,6 +81,7 @@ export function PreQualRequestSheet({
   const [loanText, setLoanText] = useState("");
   const [closingDate, setClosingDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [emailMarketing, setEmailMarketing] = useState(false);
   const [entityTBD, setEntityTBD] = useState(true);
   const [entityName, setEntityName] = useState("");
   // F&F-only — ARV (After Repair Value) + scope-of-work line items.
@@ -106,6 +108,7 @@ export function PreQualRequestSheet({
       setSowItems([]);
       setStep(1);
       setError(null);
+      setEmailMarketing(false);
       setDoneFlash(false);
     }
   }, [visible, initialAddress, initialLoanType]);
@@ -159,6 +162,7 @@ export function PreQualRequestSheet({
         purchase_price: purchaseNum,
         requested_loan_amount: loanNum,
         loan_type: loanType,
+        email_marketing_consent: emailMarketing,
         // Closing date is optional. Backend expects ISO yyyy-mm-dd or
         // null; if the borrower types something we trust them and pass
         // it through. If the format is bad the backend 422s and we
@@ -514,6 +518,9 @@ export function PreQualRequestSheet({
                   </View>
                 ) : null}
 
+                {(!isFixFlip || step === 2) && (
+                  <MarketingEmailChoice checked={emailMarketing} onChange={setEmailMarketing} />
+                )}
                 {error ? (
                   <Pill bg={t.dangerBg} color={t.danger}>{error}</Pill>
                 ) : null}
