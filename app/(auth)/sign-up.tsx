@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useSignUp } from "@clerk/clerk-expo";
+import { MarketingEmailChoice } from "@/components/MarketingEmailChoice";
 import { useTheme } from "@/design-system/ThemeProvider";
 import { Card, QButton, SectionLabel } from "@/design-system/primitives";
 
@@ -12,6 +13,7 @@ export default function SignUpScreen() {
   const { signUp, setActive, isLoaded } = useSignUp();
   const [stage, setStage] = useState<"form" | "verify">("form");
   const [email, setEmail] = useState("");
+  const [emailMarketing, setEmailMarketing] = useState(false);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +22,14 @@ export default function SignUpScreen() {
     if (!isLoaded) return;
     setError(null);
     try {
-      await signUp.create({ emailAddress: email, password });
+      await signUp.create({
+        emailAddress: email.trim(),
+        password,
+        unsafeMetadata: {
+          qc_lending_updates_v1: emailMarketing,
+          ...(emailMarketing ? { qc_lending_updates_email_v1: email.trim().toLowerCase() } : {}),
+        },
+      });
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
       setStage("verify");
     } catch (e: unknown) {
@@ -45,7 +54,9 @@ export default function SignUpScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: t.bg, padding: 16, justifyContent: "center" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }}>
+      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ flexGrow: 1, padding: 16, justifyContent: "center" }}>
       <Card pad={20}>
         <Text style={{ fontSize: 24, fontWeight: "800", color: t.ink, marginBottom: 16 }}>
           {stage === "form" ? "Create your account" : "Verify your email"}
@@ -54,7 +65,10 @@ export default function SignUpScreen() {
         {stage === "form" && (
           <>
             <SectionLabel>Email</SectionLabel>
-            <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address"
+            <TextInput value={email} onChangeText={value => {
+                if (value.trim().toLowerCase() !== email.trim().toLowerCase()) setEmailMarketing(false);
+                setEmail(value);
+              }} autoCapitalize="none" keyboardType="email-address"
               placeholder="you@example.com" placeholderTextColor={t.ink4}
               style={fieldStyle(t)} />
             <SectionLabel>Password</SectionLabel>
@@ -62,6 +76,7 @@ export default function SignUpScreen() {
               placeholder="••••••••" placeholderTextColor={t.ink4}
               style={fieldStyle(t)} />
             {error && <Err msg={error} t={t} />}
+            <MarketingEmailChoice checked={emailMarketing} disabled={!email.trim()} onChange={setEmailMarketing} />
             <QButton label="Send verification code" onPress={startSignUp} />
           </>
         )}
@@ -84,6 +99,7 @@ export default function SignUpScreen() {
           <Text style={{ color: t.brand, fontSize: 13, fontWeight: "700" }}>Back to sign in</Text>
         </Pressable>
       </Card>
+      </ScrollView>
     </SafeAreaView>
   );
 }
